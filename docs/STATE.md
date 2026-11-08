@@ -5,8 +5,8 @@ details live in DECISIONS.md.
 
 ## Capability Roadmap
 
-- [~] Cap 0 Foundation  <- YOU ARE HERE
-- [ ] Cap 1 Capture session + hearcopyTouch
+- [x] Cap 0 Foundation
+- [ ] Cap 1 Capture session + hearcopyTouch  <- YOU ARE HERE
   - Android 11: overlay permission guidance must not promise to open
     HearCopy's own settings page.
   - Android 11: check RECORD_AUDIO before every recording start.
@@ -17,15 +17,9 @@ details live in DECISIONS.md.
   - App icon (clears lint MissingApplicationIcon; icon vectors must use
     @color references or need a CopyAndThemeTest decision).
 
-## Phase Roadmap (Cap 0 Foundation)
+## Phase Roadmap (Cap 1 Capture session + hearcopyTouch)
 
-- [x] 0.1 Build skeleton: Gradle wrapper, version catalog, single :app
-  module, minimal app that builds and installs (f900cc1, 9381edc)
-- [x] 0.2 Architecture guard tests (RepoLayout, PackageLayout,
-  DependencyDirection, DependencyAllowlist, Manifest, CopyAndTheme,
-  Language); ADR-001 (bd394d0)
-- [ ] 0.3 CI workflow: build, unit and architecture tests, lint,
-  gitleaks, commit-message check  <- NEXT
+- Not scoped yet: Cap 1 phases await the owner's approved scope.
 
 ## Known debt
 

@@ -43,3 +43,48 @@ after the first usable APK if they would delay delivery.
   fail on a deliberate local violation before being committed.
 - Guards scan tracked plus untracked-not-ignored files, so a stray file
   fails locally before it is staged.
+
+## ADR-002: CI with pinned tools and one shared commit-message check
+> Every push runs build, tests, lint, a full-history secret scan and a full-history commit-message check, using only SHA-pinned actions, a checksum-verified gitleaks binary and one shared rules script.
+- Status: Accepted (2026-11-08)
+- Anchor: db901ac
+### Context
+The commit-message rules lived in an untracked local hook and in a
+separate post-commit check, and the two had already drifted (CJK
+punctuation, whitespace before trailers, committer identity). The
+official gitleaks action needs a licence for some uses, and setup-gradle
+defaults to a commercial caching component. Tags of third-party actions
+are mutable.
+### Decision
+- .github/workflows/ci.yml runs on push to any branch: commit check,
+  gitleaks, then ./gradlew assembleDebug test lint on Temurin JDK 25.
+- .github/scripts/check-commit-msg.pl is the only copy of the
+  commit-message and identity rules. The local commit-msg hook is a thin
+  wrapper around it and fails closed if it is missing; the post-commit
+  check and CI call it with --commit.
+- CI checks every commit in git rev-list HEAD on each run, not only the
+  pushed range.
+- gitleaks is a release binary with version and SHA-256 hard-coded in
+  ci.yml and verified with sha256sum -c; it scans the full git history.
+  The licensed gitleaks action is rejected.
+- Every third-party action is pinned by full commit SHA. The workflow
+  token is read-only and checkout does not persist credentials.
+- setup-gradle uses cache-provider: basic (open source) and validates the
+  wrapper jar.
+- The runner is pinned to the concrete label ubuntu-24.04 instead of
+  ubuntu-latest; moving to a newer OS image is a deliberate change.
+### Consequences
+- Actions and gitleaks never upgrade on their own: upgrading means
+  updating a SHA or checksum by hand. The runner label fixes only the OS
+  version; GitHub still updates the image's preinstalled software weekly,
+  and retires old labels, which forces a move to a newer image.
+- Any commit authored or committed by someone else, including commits
+  made by GitHub (web edits, merge button, bots), fails CI. Changes reach
+  main only as local commits pushed by the owner.
+- CI runs the rules script from the commit under test, so a commit that
+  weakens the script is checked by the weakened script. CI cannot guard
+  its own rules; review of script changes is the guard.
+- The gitleaks checksum comes from the same unsigned release; it protects
+  against later replacement, not against a compromised release.
+- Committing from a checkout older than this commit (no script) is
+  rejected by the hook.
