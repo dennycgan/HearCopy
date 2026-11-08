@@ -1,0 +1,22 @@
+# Private, local only
+docs/private/
+CLAUDE.md
+.claude/
+
+# Gradle and build output
+.gradle/
+.kotlin/
+build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+captures/
+
+# Secrets (never commit)
+*.jks
+*.keystore
+keystore.properties
+.env
+.env.*
