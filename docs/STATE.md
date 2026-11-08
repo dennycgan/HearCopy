@@ -23,12 +23,15 @@ details live in DECISIONS.md.
 
 - [x] 1.1 State model: CaptureState, pure reduce, tapAction,
   CaptureStateStore, JVM tests; coroutines libraries (6b0ff0f)
-- [ ] 1.2 Capture pipeline: AudioSource, CaptureSession, WavWriter,
+- [x] 1.2 Capture pipeline: AudioSource, CaptureSession, WavWriter,
   SilenceDetector, 300 s dual cap, 2 s Preparing timeout; JVM tests
+  (4a0011a)
 - [ ] 1.3 First real capture on Device-A: CaptureService, PlaybackCaptureSource,
   CaptureCommands, AppContainer wiring, notification channels, temporary
   main screen, manifest permissions, minimal hearcopyTouch, temp files and
-  startup cleanup, debug-only WAV retention, diagnostics
+  startup cleanup, debug-only WAV retention, diagnostics; plus
+  CaptureSession hardening H1 (stale-session stop guard) and H2 (reader
+  outcome guard)
 - [ ] 1.4 hearcopyTouch complete: drag, timer, progress ring, Preparing
   ignore, Processing haptic, in-memory position
 - [ ] 1.5 Lifecycle rules: back to background, Recents teardown, reopen
