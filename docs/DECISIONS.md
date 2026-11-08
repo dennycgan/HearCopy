@@ -157,3 +157,57 @@ native rates.
   headroom only prevents clipping added by the filter.
 - The start-of-recording speaker dropout is not addressed here; it is
   caused by startRecording() at every rate and is diagnosed separately.
+
+## ADR-005: Continuous playback capture during a session
+> While a capture session is active, the playback-capture record runs continuously and a tap only decides which audio is kept, because every record start mutes the speaker for about 2 s on Device-A.
+- Status: Accepted (2026-11-08)
+- Anchor: 79fcc26
+### Context
+- The product spec asks for capture only after a tap and no always-on
+  capture.
+- On Device-A (Android 10), every startRecording() of a playback-capture
+  record makes the audio policy connect the remote-submix device and move
+  media tracks to it; during the move it mutes media on the speaker output
+  and restores it 2 s later. The user hears TikTok drop out for about 2 s on
+  every tap while the video keeps playing.
+- Diagnostics: build() is not the cause; one record kept and restarted per
+  tap still mutes on every start; a third-party screen recorder using the
+  same API (44.1 kHz, same mix type, route flags and usages) mutes the same
+  way; one record started once per session and read throughout showed no
+  further mute across video switches, pause/resume and a screen lock.
+### Decision
+- The record is built and started once per session, right after the
+  session starts (HearCopy in front), and stopped and released at teardown.
+- A tap attaches a per-attempt clip at a chunk boundary; stop detaches it.
+  The recording style starts with the first written chunk.
+- No pre-roll: while no clip is attached, each read is discarded at once;
+  no ring buffer, nothing on disk. Idle work is read and discard only: the
+  source skips at its native rate, no decimation, no silence detection.
+- Decimation stays inside the source (ADR-004), reset when a clip starts.
+- A read error restarts the record within a budget (1 per 60 s, 3 per
+  session); a stuck read, a used-up budget or a failed start ends the
+  session.
+- Rejected: a new record per tap; pre-creating the record on Ready (build
+  is not the cause); one record restarted per tap; a start/stop warm-up at
+  session start (the next start mutes again); turning red only after the
+  mute ends (the mute is still heard).
+### Consequences
+- Deviates from the product spec: capture runs during a session; only audio
+  after a tap is kept. The README discloses this before V1.
+- One mute per session start (unheard if nothing plays) and one per restart
+  after an error; audible if media plays at that moment.
+- An active session keeps the device awake (audio wakelock), also with the
+  screen off; not measured, accepted by the owner.
+- A read error restarts the record within a budget (1 per 60 s, 3 per
+  session); a stuck read or a used-up budget ends the session.
+- Capture start failures now end the session instead of failing a tap with
+  InitFailed; FailureReason.InitFailed stays in state/ until the Cap 3
+  failure copy is designed.
+- The OEM privacy notice does not show on taps. It may show once per
+  session for a few seconds when HearCopy leaves the front (seen in one of
+  two Device-A runs, about 5 s).
+- Pre-tap audio in a clip is bounded by the record backlog at the first clip
+  read (at most the 400 ms buffer); measured on Device-A: 0 ms (record
+  backlog at most 15 ms).
+- A clip may run up to one chunk (about 100 ms) past the stop tap.
+- The escape hatch "pre-create AudioRecord on Ready" is obsolete.

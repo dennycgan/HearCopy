@@ -20,6 +20,8 @@ details live in DECISIONS.md.
     @color references or need a CopyAndThemeTest decision).
   - Keep or remove the debug-only WAV retention (debug builds keep the
     last three valid clips).
+  - README discloses continuous playback capture during an active
+    session; only audio after a tap is kept.
 
 ## Phase Roadmap (Cap 1 Capture session + hearcopyTouch)
 
@@ -35,12 +37,16 @@ details live in DECISIONS.md.
   startup cleanup, debug-only WAV retention, diagnostics; plus
   CaptureSession hardening H1 (stale-session stop guard) and H2 (reader
   outcome guard) (5ce3820)
-- [ ] 1.4 Capture start without speaker dropout
+- [x] 1.4 Capture start without speaker dropout: continuous capture
+  during a session (ADR-005), CaptureLoop, per-attempt clip at chunk
+  boundaries, source skip, restart budget; JVM tests (79fcc26)
 - [ ] 1.5 hearcopyTouch complete: drag, timer, progress ring, Preparing
   ignore, Processing haptic, in-memory position
 - [ ] 1.6 Lifecycle rules: back to background, Recents teardown, reopen
   reuse or re-request, authorisation lost (hide, alert, stop), single main
   screen instance, no duplicate button
+  - Capture loss ends the session without an alert now; the alert comes
+    with 1.6 (ADR-005).
 
 ## Known debt
 
