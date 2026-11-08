@@ -3,4 +3,5 @@
     <color name="hearcopy_accent">#FC2555</color>
     <color name="hearcopy_secondary">#E0C590</color>
     <color name="hearcopy_white">#FFFFFF</color>
+    <color name="hearcopy_outline">#8A8A8A</color>
 </resources>

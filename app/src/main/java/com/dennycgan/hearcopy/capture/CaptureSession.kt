@@ -98,8 +98,12 @@ class CaptureSession(
     /**
      * Manual stop. Dispatches `TapStop`; continues only if that leaves this
      * attempt in Processing, otherwise (for example in Preparing) a no-op.
+     * A session whose attempt is no longer current returns at once:
+     * `TapStop` carries no attempt and would move the newer attempt instead.
+     * Main thread only, like every attempt-changing dispatch.
      */
     fun stop() {
+        if (store.state.value.attempt != attempt) return
         val state = store.dispatch(CaptureEvent.TapStop)
         if (state.isCurrent(CaptureStatus.Processing)) enterStopPath()
     }
@@ -166,9 +170,17 @@ class CaptureSession(
             val claimed = outcomeClaimed.compareAndSet(false, true)
             loopExited.complete(Unit)
             if (claimed) {
-                outcome = finishClip(failure)
+                // Any unexpected exception here must still give the attempt an
+                // outcome; an uncaught one would also crash the process.
+                outcome = try {
+                    finishClip(failure)
+                } catch (e: Exception) {
+                    log("attempt=$attempt finalise failed: ${e.javaClass.simpleName}")
+                    abortQuietly()
+                    CaptureResult.Failed(FailureReason.ReadError)
+                }
             } else {
-                writer?.abort()
+                abortQuietly()
             }
         } finally {
             releaseSource()
@@ -284,12 +296,26 @@ class CaptureSession(
     }
 
     private fun publish(outcome: CaptureResult) {
-        when (outcome) {
-            is CaptureResult.Saved -> store.dispatch(CaptureEvent.CaptureSaved(attempt))
-            is CaptureResult.Failed -> store.dispatch(CaptureEvent.CaptureFailed(attempt, outcome.reason))
-            CaptureResult.Cancelled -> Unit
+        try {
+            when (outcome) {
+                is CaptureResult.Saved -> store.dispatch(CaptureEvent.CaptureSaved(attempt))
+                is CaptureResult.Failed -> store.dispatch(CaptureEvent.CaptureFailed(attempt, outcome.reason))
+                CaptureResult.Cancelled -> Unit
+            }
+        } catch (e: Exception) {
+            log("attempt=$attempt publish failed: ${e.javaClass.simpleName}")
+        } finally {
+            mutableResult.complete(outcome)
         }
-        mutableResult.complete(outcome)
+    }
+
+    /** Discards the clip; never throws. Reader thread only. */
+    private fun abortQuietly() {
+        try {
+            writer?.abort()
+        } catch (e: Exception) {
+            log("attempt=$attempt discard failed: ${e.javaClass.simpleName}")
+        }
     }
 
     /** Skipped once release has started; serialised with [releaseSource]. */

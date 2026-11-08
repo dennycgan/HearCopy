@@ -420,6 +420,56 @@ class CaptureSessionTest {
         assertTrue(logged("attempt=${f.attempt} loudest frame -30.3 dBFS"))
     }
 
+    // Hardening (H1, H2)
+
+    @Test
+    fun `H1 a stale session's stop leaves the newer attempt in Recording`() = runTest {
+        val old = begin(file = File(temp.root, "old.wav"))
+        old.source.samples(1, LOUD)
+        old.source.awaitIdle()
+        store.dispatch(CaptureEvent.SessionEnded)
+
+        val current = begin(file = File(temp.root, "current.wav"))
+        current.source.samples(1, LOUD)
+        current.source.awaitIdle()
+        assertEquals(current.attempt, store.state.value.attempt)
+        assertTrue(status is Recording)
+
+        old.session.stop()
+
+        assertTrue(status is Recording)
+        assertEquals(current.attempt, store.state.value.attempt)
+        assertEquals(0, old.source.stopCount.get())
+    }
+
+    @Test
+    fun `H2 an unexpected exception while finalising fails with ReadError and deletes the file`() = runTest {
+        val file = ThrowOnceFile(temp.root, "capture.wav")
+        val f = begin(file = file)
+        f.source.samples(3, LOUD)
+        f.source.awaitIdle()
+        file.armed = true
+
+        f.session.stop()
+
+        assertEquals(CaptureResult.Failed(FailureReason.ReadError), f.session.result.awaitBlocking())
+        assertEquals(CaptureStatus.Failed(FailureReason.ReadError), status)
+        assertFalse(File(file.parentFile, file.name).exists())
+    }
+
+    /** `getPath()` throws exactly once after [armed] is set. */
+    private class ThrowOnceFile(parent: File, name: String) : File(parent, name) {
+        @Volatile var armed = false
+
+        override fun getPath(): String {
+            if (armed) {
+                armed = false
+                throw IllegalStateException("injected")
+            }
+            return super.getPath()
+        }
+    }
+
     private companion object {
         const val LOUD: Short = 1_000
     }

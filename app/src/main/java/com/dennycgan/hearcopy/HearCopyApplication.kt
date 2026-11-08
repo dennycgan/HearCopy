@@ -9,6 +9,9 @@ class HearCopyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container = AppContainer()
+        container = AppContainer(this)
+        // Synchronous, before any recording can start in this process.
+        container.captureFiles.clearTemp()
+        container.notifications.createChannels()
     }
 }

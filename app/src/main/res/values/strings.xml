@@ -1,4 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">HearCopy</string>
+
+    <!-- Temporary main screen -->
+    <string name="setup_title">Set up HearCopy</string>
+    <string name="setup_overlay">Display over other apps</string>
+    <string name="setup_microphone">Microphone</string>
+    <string name="setup_capture">Audio capture</string>
+    <string name="setup_done">Done</string>
+    <string name="setup_needed">Needed</string>
+    <string name="setup_overlay_hint">In the settings that open, find HearCopy and allow it to display over other apps, then come back.</string>
+    <string name="action_overlay">Allow display over other apps</string>
+    <string name="action_microphone">Allow microphone</string>
+    <string name="action_capture">Allow audio capture</string>
+
+    <string name="status_setup">Complete the steps above to start.</string>
+    <string name="status_declined">A step was not allowed. Use the button to try again.</string>
+    <string name="status_starting">Starting the capture session…</string>
+    <string name="status_ready">Ready. Tap the floating button to capture audio.</string>
+    <string name="status_preparing">Starting capture…</string>
+    <string name="status_recording">Capturing audio. Tap the floating button to stop.</string>
+    <string name="status_processing">Saving the clip…</string>
+    <string name="status_failed_timeout">No audio arrived in time. Tap the floating button to try again.</string>
+    <string name="status_failed_init">Audio capture could not start on this device.</string>
+    <string name="status_failed_read">Audio capture stopped unexpectedly. Tap the floating button to try again.</string>
+    <string name="status_failed_no_audio">The clip was silent. Play some audio and try again.</string>
+
+    <!-- Notifications -->
+    <string name="channel_session_name">Capture session</string>
+    <string name="channel_alerts_name">Alerts</string>
+    <string name="notification_session_title">HearCopy is ready</string>
+    <string name="notification_session_text">Tap the floating button to capture audio.</string>
+
+    <!-- hearcopyTouch -->
+    <string name="touch_description">HearCopy capture button</string>
 </resources>

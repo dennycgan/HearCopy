@@ -1,0 +1,219 @@
+package com.dennycgan.hearcopy.capture
+
+import android.Manifest
+import android.app.Activity
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
+import com.dennycgan.hearcopy.HearCopyApplication
+import com.dennycgan.hearcopy.notify.CaptureNotifications
+import com.dennycgan.hearcopy.overlay.HearCopyTouch
+import com.dennycgan.hearcopy.state.CaptureEvent
+import com.dennycgan.hearcopy.state.CaptureStatus
+import com.dennycgan.hearcopy.state.TapAction
+import com.dennycgan.hearcopy.state.tapAction
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Foreground service of type mediaProjection. Holds one capture consent for
+ * many recordings, shows hearcopyTouch, and runs one [CaptureSession] per
+ * recording attempt. Everything here runs on the main thread.
+ */
+class CaptureService : Service(), CaptureSessionHandle {
+
+    /** Why the session ends (Cap 1 design 3.6). */
+    enum class TeardownReason { UserEnded, ProjectionLost, PermissionLost, Internal }
+
+    private val container by lazy { (application as HearCopyApplication).container }
+    private val store by lazy { container.store }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private var projection: MediaProjection? = null
+    private var overlay: HearCopyTouch? = null
+    private var session: CaptureSession? = null
+    private var stopping = false
+
+    private val projectionCallback = object : MediaProjection.Callback() {
+        override fun onStop() {
+            if (stopping) return
+            log("projection stopped externally")
+            teardown(TeardownReason.ProjectionLost)
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        container.sessionHandle = this
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A second getMediaProjection would stop the projection we hold and
+        // fire our own onStop into teardown, so a further start is ignored.
+        if (projection != null || stopping) {
+            log("start ignored: a session is already active or ending")
+            return START_NOT_STICKY
+        }
+        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
+        val data = intent?.consentData()
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            log("start without a consent result; stopping")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        try {
+            startForeground(
+                CaptureNotifications.SESSION_NOTIFICATION_ID,
+                container.notifications.sessionNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
+            )
+        } catch (e: RuntimeException) {
+            log("startForeground failed: ${e.javaClass.simpleName}")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        val granted = try {
+            getSystemService(MediaProjectionManager::class.java).getMediaProjection(resultCode, data)
+        } catch (e: RuntimeException) {
+            log("consent result rejected: ${e.javaClass.simpleName}")
+            null
+        }
+        if (granted == null) {
+            teardown(TeardownReason.Internal)
+            return START_NOT_STICKY
+        }
+        granted.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
+        projection = granted
+        store.dispatch(CaptureEvent.SessionStarted)
+        overlay = HearCopyTouch(this, store.state, container.captureCommands).also { it.show() }
+        log("session started")
+        return START_NOT_STICKY
+    }
+
+    override fun onTap() {
+        if (projection == null || stopping) return
+        when (tapAction(store.state.value.status)) {
+            TapAction.Start -> startCapture()
+            TapAction.Stop -> session?.stop()
+            TapAction.Ignore, TapAction.Reject -> Unit
+        }
+    }
+
+    private fun startCapture() {
+        // Checked here, never read from the store: the reported value may be stale.
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            log("RECORD_AUDIO missing at tap")
+            teardown(TeardownReason.PermissionLost)
+            return
+        }
+        val held = projection ?: return
+        val before = store.state.value.attempt
+        val after = store.dispatch(CaptureEvent.TapStart)
+        if (after.status != CaptureStatus.Preparing || after.attempt <= before) return
+
+        log("tap: attempt=${after.attempt} starting")
+        val next = CaptureSession(
+            attempt = after.attempt,
+            source = container.audioSourceFactory(held),
+            outputFile = container.captureFiles.newTempFile(after.attempt),
+            store = store,
+            scope = scope,
+            // Monotonic and counts deep sleep. The session's timers still run
+            // on Main (uptime), which stops in deep sleep; accepted because
+            // the platform holds a wakelock while a record is active, so a
+            // timer can only fire late, never not at all.
+            clock = SystemClock::elapsedRealtime,
+            log = ::log,
+        )
+        session = next
+        next.start()
+        scope.launch { onResult(next, next.result.await()) }
+    }
+
+    private suspend fun onResult(finished: CaptureSession, result: CaptureResult) {
+        if (session === finished) session = null
+        log(
+            when (result) {
+                is CaptureResult.Saved -> "result: saved ${result.file.name}"
+                is CaptureResult.Failed -> "result: failed ${result.reason}"
+                CaptureResult.Cancelled -> "result: cancelled"
+            },
+        )
+        if (result is CaptureResult.Saved) {
+            val ok = withContext(Dispatchers.IO) { container.captureFiles.keepOrDelete(result.file) }
+            if (!ok) log("saved clip could not be kept or deleted cleanly")
+        }
+    }
+
+    /**
+     * Ends the session (Cap 1 design 3.6). Phase 1.3 skeleton: the
+     * authorisation-lost alert and the Recents path are added in phase 1.5.
+     */
+    private fun teardown(reason: TeardownReason) {
+        if (stopping) return
+        stopping = true
+        log("teardown reason=$reason")
+        overlay?.hide()
+        overlay = null
+        // The reader deletes the cancelled clip's temp file when it exits.
+        session?.cancel()
+        session = null
+        projection?.let {
+            it.unregisterCallback(projectionCallback)
+            it.stop()
+        }
+        projection = null
+        store.dispatch(CaptureEvent.SessionEnded)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        teardown(TeardownReason.Internal)
+        if (container.sessionHandle === this) container.sessionHandle = null
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    private fun log(message: String) {
+        Log.d(TAG, message)
+    }
+
+    private fun Intent.consentData(): Intent? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getParcelableExtra(EXTRA_DATA, Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            getParcelableExtra(EXTRA_DATA)
+        }
+
+    companion object {
+        private const val TAG = "HearCopyCapture"
+        private const val EXTRA_RESULT_CODE = "com.dennycgan.hearcopy.extra.RESULT_CODE"
+        private const val EXTRA_DATA = "com.dennycgan.hearcopy.extra.DATA"
+
+        fun startIntent(context: Context, resultCode: Int, data: Intent): Intent =
+            Intent(context, CaptureService::class.java)
+                .putExtra(EXTRA_RESULT_CODE, resultCode)
+                .putExtra(EXTRA_DATA, data)
+    }
+}
