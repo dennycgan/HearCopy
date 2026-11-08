@@ -88,3 +88,72 @@ are mutable.
   against later replacement, not against a compromised release.
 - Committing from a checkout older than this commit (no script) is
   rejected by the hook.
+
+## ADR-003: Portrait-only V1
+> V1 locks the main screen to portrait and promises phones in portrait only; the floating button makes no landscape promise but always stays on screen.
+- Status: Accepted (2026-11-08)
+- Anchor: 5ce3820
+### Context
+HearCopy is used alongside TikTok-style portrait video. Neither the
+temporary main screen nor the Cap 3 main screen needs a landscape layout.
+Supporting rotation would add layout and lifecycle cases to design and
+test on every Cap without a product need.
+### Decision
+- MainActivity declares android:screenOrientation="portrait". The lock
+  does not depend on the device's auto-rotate setting.
+- hearcopyTouch draws over other apps, which may run in landscape. V1
+  makes no landscape promise there, but the button is clamped to the
+  screen on configuration changes so it never sits off-screen during a
+  recording.
+- Saved-state handling in MainActivity stays: other configuration
+  changes (dark mode, font scale, locale) and process death still
+  recreate the Activity.
+### Consequences
+- No landscape testing in V1; rotation checks are removed from the
+  device checklists.
+- On Android 16+ the orientation lock is ignored on large screens
+  (smallest width >= 600dp) for apps targeting API 36+; with targetSdk 37
+  there is no opt-out. V1 promises phones only.
+- Lint reports LockedOrientationActivity and DiscouragedApi on the
+  manifest line; accepted as a consequence of this decision.
+
+## ADR-004: Capture at 48 kHz and decimate to 16 kHz
+> Playback audio is captured at 48 kHz and converted to 16 kHz inside the capture source with a low-pass FIR filter, because requesting 16 kHz from the platform yields zero-filled audio on Device-A.
+- Status: Accepted (2026-11-08)
+- Anchor: 5ce3820
+### Context
+The kickoff asks for PCM 16-bit, 16 kHz, mono and lets the system
+resample. On Device-A (Android 10) a playback-capture record built at
+16 kHz initialises normally, but about 28% of the samples arrive as exact
+zeros (about 17.6 ms every 64 ms), heard as crackle throughout. A
+diagnostic build showed: the output mixer runs at 48 kHz; at 48 kHz the
+capture has no zero fill after start-up and the clips are clean by
+listening; at 44.1 kHz about 1.4% of samples are still zero-filled. The
+zero fill is consistent with the remote submix path supporting only its
+native rates.
+### Decision
+- PlaybackCaptureSource requests 48000 Hz mono PCM 16-bit and requires
+  the record to report 48000; anything else is InitFailed. It never
+  falls back to another rate on its own.
+- It decimates by 3 to 16 kHz with a 175-tap linear-phase FIR (Kaiser
+  window, passband to 7 kHz, at least 60 dB attenuation from 8 kHz) in a
+  pure-Kotlin Decimator, before samples leave the source. The filter
+  applies 3 dB of headroom (DC gain 10^(-3/20)) so that its overshoot on
+  loud audio is not clamped; the 16-bit clamp remains only as a safety net.
+- The AudioSource contract stays PCM 16-bit, 16 kHz, mono, so
+  CaptureSession, WavWriter, SilenceDetector, the 300 s sample cap and
+  the WAV header are unchanged.
+- The record buffer is at least 400 ms at 48 kHz (38400 bytes).
+### Consequences
+- About 2.8 million multiply-adds per second on the reader thread
+  during a recording; no new dependency.
+- The 16 kHz escape hatch is closed. The 24 kHz accuracy fallback, if
+  ever needed, becomes decimation by 2 from the same capture.
+- Devices whose capture path does not run at 48 kHz fail with InitFailed
+  until a further decision; Device-B is checked before V1.
+- Output is 3 dB quieter than the source, so the -50 dBFS silence
+  threshold corresponds to about -47 dBFS of the source.
+- Samples already clipped in the platform mix are not recoverable; the
+  headroom only prevents clipping added by the filter.
+- The start-of-recording speaker dropout is not addressed here; it is
+  caused by startRecording() at every rate and is diagnosed separately.
