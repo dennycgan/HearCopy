@@ -36,4 +36,14 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.konsist)
+}
+
+tasks.withType<Test>().configureEach {
+    // The architecture guards read repository files (docs, manifests, build
+    // scripts, git file list) that are not declared task inputs, so the test
+    // task must never be skipped as up to date.
+    outputs.upToDateWhen { false }
 }
