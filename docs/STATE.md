@@ -6,11 +6,13 @@ details live in DECISIONS.md.
 ## Capability Roadmap
 
 - [x] Cap 0 Foundation
-- [ ] Cap 1 Capture session + hearcopyTouch  <- YOU ARE HERE
+- [~] Cap 1 Capture session + hearcopyTouch  <- YOU ARE HERE
   - Android 11: overlay permission guidance must not promise to open
     HearCopy's own settings page.
   - Android 11: check RECORD_AUDIO before every recording start.
 - [ ] Cap 2 Transcription loop
+  - Decide where the API key comes from before Cap 2 design (settings
+    page is Cap 3).
 - [ ] Cap 3 Main UI, settings and lifecycle completion
 - [ ] V1 release
   - Includes Device-B (Android 11) full flow.
@@ -19,7 +21,19 @@ details live in DECISIONS.md.
 
 ## Phase Roadmap (Cap 1 Capture session + hearcopyTouch)
 
-- Not scoped yet: Cap 1 phases await the owner's approved scope.
+- [x] 1.1 State model: CaptureState, pure reduce, tapAction,
+  CaptureStateStore, JVM tests; coroutines libraries (6b0ff0f)
+- [ ] 1.2 Capture pipeline: AudioSource, CaptureSession, WavWriter,
+  SilenceDetector, 300 s dual cap, 2 s Preparing timeout; JVM tests
+- [ ] 1.3 First real capture on Device-A: CaptureService, PlaybackCaptureSource,
+  CaptureCommands, AppContainer wiring, notification channels, temporary
+  main screen, manifest permissions, minimal hearcopyTouch, temp files and
+  startup cleanup, debug-only WAV retention, diagnostics
+- [ ] 1.4 hearcopyTouch complete: drag, timer, progress ring, Preparing
+  ignore, Processing haptic, in-memory position
+- [ ] 1.5 Lifecycle rules: back to background, Recents teardown, reopen
+  reuse or re-request, authorisation lost (hide, alert, stop), single main
+  screen instance, no duplicate button
 
 ## Known debt
 
