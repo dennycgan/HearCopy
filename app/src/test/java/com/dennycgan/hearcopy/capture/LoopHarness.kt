@@ -82,6 +82,14 @@ class LoopHarness(
 
     fun logged(text: String) = logs.any { it.contains(text) }
 
+    /** Waits until the reader thread that released [source] has ended. */
+    fun awaitReaderExited(source: FakeAudioSource = this.source) {
+        source.awaitReleased()
+        val reader = checkNotNull(source.releasedBy)
+        reader.join(TimeUnit.SECONDS.toMillis(GUARD_SECONDS))
+        if (reader.isAlive) fail("reader thread did not exit")
+    }
+
     /** Test cleanup: cancels clips, closes the loop, unblocks and awaits every source. */
     fun shutdown() {
         sessions.forEach { it.cancel() }

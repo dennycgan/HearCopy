@@ -31,6 +31,9 @@ class FakeAudioSource(
 
     @Volatile var startError: Exception? = null
 
+    /** The thread that called [release], once it has. */
+    @Volatile var releasedBy: Thread? = null
+
     /** When set and the queue is empty, every call returns this many samples. */
     @Volatile var endless: Step.Samples? = null
 
@@ -103,6 +106,7 @@ class FakeAudioSource(
     override fun release() {
         calls += "release"
         releaseThreads += Thread.currentThread().name
+        releasedBy = Thread.currentThread()
         releaseCount.incrementAndGet()
         released.countDown()
     }

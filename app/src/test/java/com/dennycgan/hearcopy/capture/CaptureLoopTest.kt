@@ -245,6 +245,7 @@ class CaptureLoopTest {
         with(h) { h.source.assertReleasedOnceByReader() }
         assertEquals(1, h.source.stopCount.get())
         eventually("clip discarded") { !c.file.exists() }
+        h.awaitReaderExited()
         advance(CaptureLoop.CLOSE_BOUND_MS)
         assertFalse(h.logged("possible leak"))
     }
