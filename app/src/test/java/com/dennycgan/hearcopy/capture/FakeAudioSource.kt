@@ -7,13 +7,13 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.fail
 
 /**
- * Scripted [AudioSource]. [read] returns queued steps in order; with an empty
- * queue it blocks until a step is queued, until [stop] (unless
- * [ignoreStop]), or until [finishBlockedRead] / [shutdown].
+ * Scripted [AudioSource]. [read] and [skip] return queued steps in order from
+ * one queue; with an empty queue they block until a step is queued, until
+ * [stop] (unless [ignoreStop]), or until [finishBlockedRead] / [shutdown].
  */
 class FakeAudioSource(
     private val ignoreStop: Boolean = false,
-    /** What a read unblocked by stop returns. */
+    /** What a call unblocked by stop returns. */
     private val returnAfterStop: Int = 0,
 ) : AudioSource {
 
@@ -22,7 +22,7 @@ class FakeAudioSource(
         data class Code(val value: Int) : Step
     }
 
-    /** Ordered call log: start, read, returned, stop, release. */
+    /** Ordered call log: start, read, skip, returned, stop, release. */
     val calls = CopyOnWriteArrayList<String>()
     val releaseThreads = CopyOnWriteArrayList<String>()
     val readTimesNs = CopyOnWriteArrayList<Long>()
@@ -31,7 +31,7 @@ class FakeAudioSource(
 
     @Volatile var startError: Exception? = null
 
-    /** When set and the queue is empty, every read returns this many samples. */
+    /** When set and the queue is empty, every call returns this many samples. */
     @Volatile var endless: Step.Samples? = null
 
     private val lock = Any()
@@ -39,8 +39,12 @@ class FakeAudioSource(
     private var enqueued = 0
     private var idleAt = -1
 
+    /** The call ("read" or "skip") that is blocked on an empty queue, if any. */
+    @Volatile private var waitingIn: String? = null
+
     @Volatile private var stopped = false
     @Volatile private var forced = false
+    private val started = CountDownLatch(1)
     private val released = CountDownLatch(1)
 
     fun enqueue(vararg step: Step) = synchronized(lock) {
@@ -53,29 +57,44 @@ class FakeAudioSource(
 
     override fun start() {
         calls += "start"
+        started.countDown()
         startError?.let { throw it }
     }
 
     override fun read(buffer: ShortArray, offset: Int, size: Int): Int {
         calls += "read"
         readTimesNs += System.nanoTime()
+        return next("read", buffer, offset, size)
+    }
+
+    override fun skip(): Int {
+        calls += "skip"
+        return next("skip", ShortArray(SKIP_SIZE), 0, SKIP_SIZE)
+    }
+
+    private fun next(op: String, buffer: ShortArray, offset: Int, size: Int): Int {
         while (true) {
             // Polling and marking idle under one lock: idle means every queued
             // step was returned and the reader came back for more.
             val step = synchronized(lock) {
-                steps.removeFirstOrNull() ?: endless.also { if (it == null) idleAt = enqueued }
+                steps.removeFirstOrNull()?.also { waitingIn = null }
+                    ?: endless.also {
+                        if (it == null) {
+                            idleAt = enqueued
+                            waitingIn = op
+                        }
+                    }
             }
             if (step != null) return apply(step, buffer, offset, size).also { calls += "returned" }
-            if (forced || (stopped && !ignoreStop)) return returnAfterStop.also { calls += "returned" }
+            if (forced || (stopped && !ignoreStop)) {
+                waitingIn = null
+                return returnAfterStop.also { calls += "returned" }
+            }
             Thread.sleep(1)
         }
     }
 
-    /** Runs at the start of [stop], before the read is unblocked. */
-    @Volatile var onStop: (() -> Unit)? = null
-
     override fun stop() {
-        onStop?.invoke()
         calls += "stop"
         stopCount.incrementAndGet()
         stopped = true
@@ -88,7 +107,7 @@ class FakeAudioSource(
         released.countDown()
     }
 
-    /** Unblocks a read that ignores stop. */
+    /** Unblocks a call that ignores stop. */
     fun finishBlockedRead() {
         forced = true
     }
@@ -99,13 +118,20 @@ class FakeAudioSource(
         stopped = true
     }
 
-    /** Blocks until the reader has consumed every queued step and waits in read. */
-    fun awaitIdle() {
+    /**
+     * Blocks until the reader has consumed every queued step and waits in
+     * [op] ("read" or "skip"; null for either).
+     */
+    fun awaitIdle(op: String? = null) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(GUARD_SECONDS)
-        while (synchronized(lock) { idleAt != enqueued }) {
-            if (System.nanoTime() > deadline) fail("reader did not become idle")
+        while (synchronized(lock) { idleAt != enqueued || waitingIn == null || (op != null && waitingIn != op) }) {
+            if (System.nanoTime() > deadline) fail("reader did not become idle in ${op ?: "read or skip"}")
             Thread.sleep(1)
         }
+    }
+
+    fun awaitStarted() {
+        if (!started.await(GUARD_SECONDS, TimeUnit.SECONDS)) fail("source was not started")
     }
 
     fun awaitReleased() {
@@ -124,5 +150,7 @@ class FakeAudioSource(
     companion object {
         /** Real-time guard for latches; never part of the asserted timing. */
         const val GUARD_SECONDS = 10L
+
+        private const val SKIP_SIZE = 3 * CaptureSession.CHUNK_SAMPLES
     }
 }

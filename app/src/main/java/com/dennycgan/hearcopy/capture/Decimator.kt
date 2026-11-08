@@ -33,6 +33,13 @@ class Decimator {
     /** Inputs consumed since the last output: 0, 1 or 2. */
     private var pending = 0
 
+    /** Forgets all history and phase, as if newly built. Used when a clip starts (ADR-005). */
+    fun reset() {
+        history.fill(0.0)
+        head = 0
+        pending = 0
+    }
+
     /** Max input samples to read so that [process] emits at most [outputCount] samples. */
     fun maxInputFor(outputCount: Int): Int = FACTOR * outputCount - pending
 

@@ -153,6 +153,21 @@ class DecimatorTest {
     }
 
     @Test
+    fun `reset forgets history and phase, so the output equals a new decimator's`() {
+        val noise = Random(7)
+        val earlier = ShortArray(1_001) { noise.nextInt(-20_000, 20_000).toShort() }
+        val input = ShortArray(4_800) { noise.nextInt(-20_000, 20_000).toShort() }
+        val used = Decimator()
+        used.process(earlier, 0, earlier.size, ShortArray(earlier.size), 0)
+
+        used.reset()
+        val out = ShortArray(input.size / Decimator.FACTOR)
+        val n = used.process(input, 0, input.size, out, 0)
+
+        assertArrayEquals(oneShot(input), out.copyOf(n))
+    }
+
+    @Test
     fun `full-scale square wave never reaches the clamp`() {
         val input = ShortArray(9_600) { n -> if ((n / 24) % 2 == 0) Short.MAX_VALUE else Short.MIN_VALUE }
         val taps = Decimator.lowPassTaps()

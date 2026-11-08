@@ -47,6 +47,7 @@ class CaptureService : Service(), CaptureSessionHandle {
     private var projection: MediaProjection? = null
     private var overlay: HearCopyTouch? = null
     private var session: CaptureSession? = null
+    private var loop: CaptureLoop? = null
     private var stopping = false
 
     private val projectionCallback = object : MediaProjection.Callback() {
@@ -104,9 +105,32 @@ class CaptureService : Service(), CaptureSessionHandle {
         granted.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
         projection = granted
         store.dispatch(CaptureEvent.SessionStarted)
+        if (!startLoop(granted)) return START_NOT_STICKY
         overlay = HearCopyTouch(this, store.state, container.captureCommands).also { it.show() }
         log("session started")
         return START_NOT_STICKY
+    }
+
+    /**
+     * Starts the session's continuous capture (ADR-005) while HearCopy is
+     * still in front. The platform mutes media once here, unheard when
+     * nothing plays.
+     */
+    private fun startLoop(granted: MediaProjection): Boolean {
+        // Checked here, never read from the store: the reported value may be stale.
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            log("RECORD_AUDIO missing at session start")
+            teardown(TeardownReason.PermissionLost)
+            return false
+        }
+        loop = CaptureLoop(
+            sourceFactory = { container.audioSourceFactory(granted) },
+            scope = scope,
+            clock = SystemClock::elapsedRealtime,
+            log = ::log,
+            onLost = { teardown(TeardownReason.Internal) },
+        ).also { it.start() }
+        return true
     }
 
     override fun onTap() {
@@ -125,15 +149,15 @@ class CaptureService : Service(), CaptureSessionHandle {
             teardown(TeardownReason.PermissionLost)
             return
         }
-        val held = projection ?: return
+        val running = loop ?: return
         val before = store.state.value.attempt
         val after = store.dispatch(CaptureEvent.TapStart)
         if (after.status != CaptureStatus.Preparing || after.attempt <= before) return
 
-        log("tap: attempt=${after.attempt} starting")
+        // Monotonic, the time base of the "clip start" log: pre-tap audio = this - first frame.
+        log("tap: attempt=${after.attempt} starting at ${System.nanoTime() / NANOS_PER_MILLI} ms monotonic")
         val next = CaptureSession(
             attempt = after.attempt,
-            source = container.audioSourceFactory(held),
             outputFile = container.captureFiles.newTempFile(after.attempt),
             store = store,
             scope = scope,
@@ -146,6 +170,7 @@ class CaptureService : Service(), CaptureSessionHandle {
         )
         session = next
         next.start()
+        if (!running.attach(next)) next.failUnattached()
         scope.launch { onResult(next, next.result.await()) }
     }
 
@@ -174,9 +199,11 @@ class CaptureService : Service(), CaptureSessionHandle {
         log("teardown reason=$reason")
         overlay?.hide()
         overlay = null
-        // The reader deletes the cancelled clip's temp file when it exits.
+        // The reader deletes the cancelled clip's temp file when it detaches it.
         session?.cancel()
         session = null
+        loop?.close()
+        loop = null
         projection?.let {
             it.unregisterCallback(projectionCallback)
             it.stop()
@@ -208,6 +235,7 @@ class CaptureService : Service(), CaptureSessionHandle {
 
     companion object {
         private const val TAG = "HearCopyCapture"
+        private const val NANOS_PER_MILLI = 1_000_000L
         private const val EXTRA_RESULT_CODE = "com.dennycgan.hearcopy.extra.RESULT_CODE"
         private const val EXTRA_DATA = "com.dennycgan.hearcopy.extra.DATA"
 

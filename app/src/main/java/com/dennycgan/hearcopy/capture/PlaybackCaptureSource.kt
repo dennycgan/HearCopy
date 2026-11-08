@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
+import android.media.AudioTimestamp
 import android.media.projection.MediaProjection
 import android.os.SystemClock
 import android.util.Log
@@ -19,9 +20,10 @@ typealias AudioSourceFactory = (MediaProjection) -> AudioSource
 /**
  * Captures audio that other apps play (USAGE_MEDIA, USAGE_GAME,
  * USAGE_UNKNOWN) and delivers PCM 16-bit, 16 kHz, mono. One instance per
- * attempt. The record runs at 48 kHz, the rate the platform capture path
- * delivers cleanly, and [Decimator] converts it to 16 kHz (ADR-004). If the
- * record does not run at 48 kHz, [start] fails.
+ * session, or per restart after a read error (ADR-005). The record runs at
+ * 48 kHz, the rate the platform capture path delivers cleanly, and
+ * [Decimator] converts it to 16 kHz (ADR-004); [skip] reads 48 kHz and
+ * converts nothing. If the record does not run at 48 kHz, [start] fails.
  */
 class PlaybackCaptureSource(private val projection: MediaProjection) : AudioSource {
 
@@ -30,10 +32,17 @@ class PlaybackCaptureSource(private val projection: MediaProjection) : AudioSour
 
     // Reader-thread state.
     private val decimator = Decimator()
-    private var input = ShortArray(Decimator.FACTOR * CaptureSession.CHUNK_SAMPLES)
+    private var input = ShortArray(SKIP_SAMPLES)
+    private val timestamp = AudioTimestamp()
+
+    /** 48 kHz frames taken from the record so far, by [read] and [skip]. */
+    private var framesTaken = 0L
+
+    /** True until the first [read] after a [skip]: that read starts a clip. */
+    private var clipStarts = true
 
     // RECORD_AUDIO is checked with checkSelfPermission by CaptureService at
-    // tap time, right before this attempt is created.
+    // session start, right before the capture loop builds this source.
     @SuppressLint("MissingPermission")
     override fun start() {
         val startedAt = SystemClock.elapsedRealtime()
@@ -79,15 +88,49 @@ class PlaybackCaptureSource(private val projection: MediaProjection) : AudioSour
      */
     override fun read(buffer: ShortArray, offset: Int, size: Int): Int {
         val current = synchronized(lock) { record } ?: return AudioRecord.ERROR_INVALID_OPERATION
+        if (clipStarts) {
+            clipStarts = false
+            // No skipped audio may reach the filter history of a new clip.
+            decimator.reset()
+            logClipStart(current)
+        }
         while (true) {
             val want = decimator.maxInputFor(size)
             if (input.size < want) input = ShortArray(want)
             val n = current.read(input, 0, want, AudioRecord.READ_BLOCKING)
             if (n <= 0) return n
+            framesTaken += n
             val produced = decimator.process(input, 0, n, buffer, offset)
             // Zero outputs only when n < 3 - pending; read again for the rest.
             if (produced > 0) return produced
         }
+    }
+
+    /** Reads one 100 ms chunk at 48 kHz and drops it; the buffer is overwritten by the next read. */
+    override fun skip(): Int {
+        val current = synchronized(lock) { record } ?: return AudioRecord.ERROR_INVALID_OPERATION
+        clipStarts = true
+        val n = current.read(input, 0, SKIP_SAMPLES, AudioRecord.READ_BLOCKING)
+        if (n > 0) framesTaken += n
+        return n
+    }
+
+    /**
+     * Logs the record backlog at the first clip read (audio captured but not
+     * yet taken, so it predates this read) and the monotonic capture time of
+     * the clip's first frame; pre-tap audio = tap time - that time.
+     */
+    private fun logClipStart(current: AudioRecord) {
+        if (current.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) != AudioRecord.SUCCESS) {
+            Log.d(TAG, "clip start: no timestamp")
+            return
+        }
+        val nowNs = System.nanoTime()
+        val capturedNow = timestamp.framePosition + (nowNs - timestamp.nanoTime) * CAPTURE_RATE / NANOS_PER_SECOND
+        val backlogMs = (capturedNow - framesTaken) * MILLIS_PER_SECOND / CAPTURE_RATE
+        val firstFrameNs =
+            timestamp.nanoTime + (framesTaken - timestamp.framePosition) * NANOS_PER_SECOND / CAPTURE_RATE
+        Log.d(TAG, "clip start: backlog $backlogMs ms, first frame at ${firstFrameNs / NANOS_PER_MILLI} ms monotonic")
     }
 
     override fun stop() {
@@ -113,5 +156,12 @@ class PlaybackCaptureSource(private val projection: MediaProjection) : AudioSour
 
         /** 4 x 100 ms of 48 kHz mono 16-bit audio. */
         const val MIN_BUFFER_BYTES = 4 * 9_600
+
+        /** One 100 ms chunk at 48 kHz. */
+        const val SKIP_SAMPLES = Decimator.FACTOR * CaptureSession.CHUNK_SAMPLES
+
+        const val NANOS_PER_SECOND = 1_000_000_000L
+        const val NANOS_PER_MILLI = 1_000_000L
+        const val MILLIS_PER_SECOND = 1_000L
     }
 }

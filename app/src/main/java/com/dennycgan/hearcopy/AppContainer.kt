@@ -20,7 +20,7 @@ class AppContainer(context: Context) {
 
     val store = CaptureStateStore()
 
-    /** One source per recording attempt, from the session's projection. */
+    /** One source per capture session (and per restart), from the session's projection. */
     val audioSourceFactory: AudioSourceFactory = { PlaybackCaptureSource(it) }
 
     /** Debug builds keep the last valid clips (Cap 1 design D2). */

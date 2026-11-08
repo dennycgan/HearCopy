@@ -30,18 +30,19 @@ sealed interface CaptureResult {
 }
 
 /**
- * One capture attempt: reads [source] on a dedicated reader thread, streams
- * to [outputFile] and drives the attempt's state events.
+ * One capture attempt: the clip that [CaptureLoop] feeds between a tap and
+ * its stop, streamed to [outputFile], and the attempt's state events.
  *
- * Rules (Cap 1 design, B4):
- * - The reader owns `release()`: it calls it once, after its read loop has
- *   exited. The controller (timers, [stop], [cancel]) only calls `stop()`.
+ * Rules (Cap 1 design B4 as mapped in 10.4):
+ * - The controller side (timers, [stop], [cancel]) never touches the
+ *   source; it only requests the end of the clip. The loop's reader detaches
+ *   the clip at a chunk boundary and then calls [finishOnReader].
  * - WAV finalisation and the silence verdict run on the reader thread after
- *   the loop has exited, never concurrently with it.
+ *   the clip is detached, never concurrently with a write.
  * - One outcome per attempt: the first to claim the outcome flag decides.
  *   Preparing timeout and [cancel] claim it at once. Manual stop and the
  *   300 s limit leave it to the reader for [READER_EXIT_BOUND_MS]; if the
- *   reader has not exited by then, the clip is Failed(ReadError).
+ *   clip has not been detached by then, it is Failed(ReadError).
  * - Racing events are arbitrated by the state returned from `dispatch`.
  *
  * [scope] runs only the timers; [clock] is monotonic milliseconds; [log] is
@@ -49,7 +50,6 @@ sealed interface CaptureResult {
  */
 class CaptureSession(
     private val attempt: Int,
-    private val source: AudioSource,
     private val outputFile: File,
     private val store: CaptureStateStore,
     private val scope: CoroutineScope,
@@ -66,10 +66,7 @@ class CaptureSession(
     private val outcomeClaimed = AtomicBoolean(false)
     private val stopRequested = AtomicBoolean(false)
     private val stopPathEntered = AtomicBoolean(false)
-    private val loopExited = CompletableDeferred<Unit>()
-
-    private val sourceLock = Any()
-    private var released = false
+    private val detached = CompletableDeferred<Unit>()
 
     @Volatile private var startedAtMs = 0L
     @Volatile private var preparingTimer: Job? = null
@@ -79,10 +76,16 @@ class CaptureSession(
     // Reader-thread state.
     private var writer: WavWriter? = null
     private val detector = SilenceDetector()
+    private var failure: FailureReason? = null
+    private var total = 0
+    private var firstAudio = false
+    private var capReached = false
+    private var loggedEmptyRead = false
 
     /**
-     * Starts the attempt. Call once, on the main thread, right after
-     * `TapStart` returned Preparing for [attempt].
+     * Starts the attempt's timers. Call once, on the main thread, right
+     * after `TapStart` returned Preparing for [attempt] and before the clip
+     * is attached.
      */
     fun start() {
         check(started.compareAndSet(false, true)) { "CaptureSession started twice" }
@@ -92,7 +95,6 @@ class CaptureSession(
             delay(deadline - clock())
             onPreparingTimeout()
         }
-        Thread({ runReader() }, READER_THREAD_NAME).start()
     }
 
     /**
@@ -115,6 +117,14 @@ class CaptureSession(
         enterStopPath()
     }
 
+    /** Fails an attempt that the loop refused to attach. Main thread. */
+    fun failUnattached() {
+        if (!outcomeClaimed.compareAndSet(false, true)) return
+        cancelTimers()
+        log("attempt=$attempt not attached: capture busy or ending")
+        publish(CaptureResult.Failed(FailureReason.ReadError))
+    }
+
     // Controller side.
 
     private fun onPreparingTimeout() {
@@ -134,19 +144,15 @@ class CaptureSession(
         enterStopPath()
     }
 
-    /** Stops the reader, then waits up to the bound for its loop to exit. */
+    /** Requests the end of the clip, then waits up to the bound for the reader to detach it. */
     private fun enterStopPath() {
         if (!stopPathEntered.compareAndSet(false, true)) return
         stopRequested.set(true)
-        stopSource()
         scope.launch {
-            val exited = withTimeoutOrNull(READER_EXIT_BOUND_MS) { loopExited.await() } != null
-            if (exited) return@launch
+            val done = withTimeoutOrNull(READER_EXIT_BOUND_MS) { detached.await() } != null
+            if (done) return@launch
             reportedStuck = true
-            log(
-                "attempt=$attempt reader not exited $READER_EXIT_BOUND_MS ms after stop; " +
-                    "source not released (possible leak)",
-            )
+            log("attempt=$attempt reader not detached $READER_EXIT_BOUND_MS ms after stop; clip abandoned")
             if (outcomeClaimed.compareAndSet(false, true)) publish(CaptureResult.Failed(FailureReason.ReadError))
         }
     }
@@ -156,99 +162,86 @@ class CaptureSession(
         limitTimer?.cancel()
     }
 
-    // Reader side.
+    // Reader side: called only by CaptureLoop's reader thread.
 
-    private fun runReader() {
-        var outcome: CaptureResult? = null
-        try {
-            val failure = try {
-                readLoop()
-            } catch (e: Exception) {
-                log("attempt=$attempt reader failed: ${e.javaClass.simpleName}")
-                FailureReason.ReadError
-            }
-            val claimed = outcomeClaimed.compareAndSet(false, true)
-            loopExited.complete(Unit)
-            if (claimed) {
-                // Any unexpected exception here must still give the attempt an
-                // outcome; an uncaught one would also crash the process.
-                outcome = try {
-                    finishClip(failure)
-                } catch (e: Exception) {
-                    log("attempt=$attempt finalise failed: ${e.javaClass.simpleName}")
-                    abortQuietly()
-                    CaptureResult.Failed(FailureReason.ReadError)
-                }
-            } else {
-                abortQuietly()
-            }
-        } finally {
-            releaseSource()
-        }
-        cancelTimers()
-        if (reportedStuck) log("attempt=$attempt reader exited late; source released")
-        outcome?.let(::publish)
-    }
+    /** Whether [open] has run. */
+    internal val isOpen: Boolean get() = writer != null || failure != null
 
-    /** Returns null on a normal exit (stop requested or sample cap). */
-    private fun readLoop(): FailureReason? {
-        if (stopRequested.get()) return null
+    /** Whether the next read belongs to this clip. */
+    internal val wantsAudio: Boolean get() = !stopRequested.get() && failure == null && !capReached
+
+    /** Opens the WAV file; a failure ends the clip with ReadError. */
+    internal fun open() {
         try {
-            source.start()
-        } catch (e: Exception) {
-            log("attempt=$attempt source start failed: ${e.javaClass.simpleName}")
-            return FailureReason.InitFailed
-        }
-        val out = try {
-            WavWriter(outputFile)
+            writer = WavWriter(outputFile)
         } catch (e: IOException) {
             log("attempt=$attempt write failed: ${e.javaClass.simpleName}")
-            return FailureReason.ReadError
+            failure = FailureReason.ReadError
         }
-        writer = out
+    }
 
-        val buffer = ShortArray(CHUNK_SAMPLES)
-        var total = 0
-        var firstAudio = false
-        var loggedEmptyRead = false
-        while (!stopRequested.get()) {
-            val n = source.read(buffer, 0, minOf(CHUNK_SAMPLES, MAX_SAMPLES - total))
-            when {
-                n > 0 -> {
-                    try {
-                        out.write(buffer, n)
-                    } catch (e: IOException) {
-                        log("attempt=$attempt write failed: ${e.javaClass.simpleName}")
-                        return FailureReason.ReadError
-                    }
-                    detector.accept(buffer, n)
-                    total += n
-                    if (!firstAudio) {
-                        firstAudio = true
-                        onFirstAudio()
-                    }
-                    if (total >= MAX_SAMPLES) {
-                        store.dispatch(CaptureEvent.LimitReached(attempt))
-                        log("attempt=$attempt limit reached by sample count")
-                        return null
-                    }
-                }
-                // After a stop request any return value is a normal exit.
-                stopRequested.get() -> return null
-                n < 0 -> {
-                    log("attempt=$attempt read failed: code $n")
-                    return FailureReason.ReadError
-                }
-                else -> {
-                    if (!loggedEmptyRead) {
-                        loggedEmptyRead = true
-                        log("attempt=$attempt read returned 0; waiting $EMPTY_READ_SLEEP_MS ms between reads")
-                    }
-                    Thread.sleep(EMPTY_READ_SLEEP_MS)
-                }
-            }
+    internal fun readSize(): Int = minOf(CHUNK_SAMPLES, MAX_SAMPLES - total)
+
+    /** Writes one chunk; [n] > 0. */
+    internal fun accept(buffer: ShortArray, n: Int) {
+        val out = writer ?: return
+        try {
+            out.write(buffer, n)
+        } catch (e: IOException) {
+            log("attempt=$attempt write failed: ${e.javaClass.simpleName}")
+            failure = FailureReason.ReadError
+            return
         }
-        return null
+        detector.accept(buffer, n)
+        total += n
+        if (!firstAudio) {
+            firstAudio = true
+            onFirstAudio()
+        }
+        if (total >= MAX_SAMPLES) {
+            capReached = true
+            store.dispatch(CaptureEvent.LimitReached(attempt))
+            log("attempt=$attempt limit reached by sample count")
+        }
+    }
+
+    internal fun emptyRead() {
+        if (loggedEmptyRead) return
+        loggedEmptyRead = true
+        log("attempt=$attempt read returned 0; waiting ${CaptureLoop.EMPTY_READ_SLEEP_MS} ms between reads")
+    }
+
+    internal fun readFailed(code: Int) {
+        log("attempt=$attempt read failed: code $code")
+        failure = FailureReason.ReadError
+    }
+
+    internal fun readerFailed(e: Exception) {
+        log("attempt=$attempt reader failed: ${e.javaClass.simpleName}")
+        failure = FailureReason.ReadError
+    }
+
+    /** Decides and publishes the outcome after the clip was detached. */
+    internal fun finishOnReader() {
+        val claimed = outcomeClaimed.compareAndSet(false, true)
+        detached.complete(Unit)
+        var outcome: CaptureResult? = null
+        if (claimed) {
+            // Any unexpected exception here must still give the attempt an
+            // outcome; an uncaught one would also stop the reader.
+            outcome = try {
+                finishClip(failure)
+            } catch (e: Exception) {
+                log("attempt=$attempt finalise failed: ${e.javaClass.simpleName}")
+                abortQuietly()
+                CaptureResult.Failed(FailureReason.ReadError)
+            }
+        } else {
+            abortQuietly()
+        }
+        cancelTimers()
+        if (reportedStuck) log("attempt=$attempt reader detached late; clip discarded")
+        outcome?.let(::publish)
     }
 
     private fun onFirstAudio() {
@@ -264,7 +257,6 @@ class CaptureSession(
         }
     }
 
-    /** Finalises the clip after the loop has exited; reader thread only. */
     private fun finishClip(failure: FailureReason?): CaptureResult {
         val out = writer
         if (failure != null) {
@@ -318,37 +310,14 @@ class CaptureSession(
         }
     }
 
-    /** Skipped once release has started; serialised with [releaseSource]. */
-    private fun stopSource() {
-        synchronized(sourceLock) {
-            if (released) return
-            try {
-                source.stop()
-            } catch (e: Exception) {
-                log("attempt=$attempt source stop failed: ${e.javaClass.simpleName}")
-            }
-        }
-    }
-
-    private fun releaseSource(): Unit = synchronized(sourceLock) {
-        released = true
-        try {
-            source.release()
-        } catch (e: Exception) {
-            log("attempt=$attempt source release failed: ${e.javaClass.simpleName}")
-        }
-    }
-
     private fun CaptureState.isCurrent(expected: CaptureStatus): Boolean =
         this.attempt == this@CaptureSession.attempt && status == expected
 
     companion object {
-        const val READER_THREAD_NAME = "HearCopyCaptureReader"
         const val CHUNK_SAMPLES = WavWriter.SAMPLE_RATE / 10
         const val MAX_DURATION_MS = 300_000L
         const val MAX_SAMPLES = (WavWriter.SAMPLE_RATE * MAX_DURATION_MS / 1000).toInt()
         const val PREPARING_TIMEOUT_MS = 2_000L
         const val READER_EXIT_BOUND_MS = 1_000L
-        const val EMPTY_READ_SLEEP_MS = 10L
     }
 }

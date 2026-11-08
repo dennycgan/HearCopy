@@ -1,7 +1,9 @@
 package com.dennycgan.hearcopy.capture
 
-import com.dennycgan.hearcopy.capture.FakeAudioSource.Companion.GUARD_SECONDS
 import com.dennycgan.hearcopy.capture.FakeAudioSource.Step
+import com.dennycgan.hearcopy.capture.LoopHarness.Companion.LOUD
+import com.dennycgan.hearcopy.capture.LoopHarness.Companion.awaitBlocking
+import com.dennycgan.hearcopy.capture.LoopHarness.Companion.eventually
 import com.dennycgan.hearcopy.state.CaptureEvent
 import com.dennycgan.hearcopy.state.CaptureStateStore
 import com.dennycgan.hearcopy.state.CaptureStatus
@@ -12,10 +14,6 @@ import com.dennycgan.hearcopy.state.CaptureStatus.Recording
 import com.dennycgan.hearcopy.state.FailureReason
 import java.io.File
 import java.io.FileNotFoundException
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -24,16 +22,15 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * Timers run on the test scheduler's virtual time; the reader is a real
- * thread synchronised through [FakeAudioSource] latches. The test body never
- * suspends while the reader runs, so virtual time moves only when a test
- * calls [advance].
+ * One attempt's clip, fed by a [CaptureLoop] (see [LoopHarness] for the
+ * timing model). Under ADR-005 the source keeps running: a stop never
+ * stops it, and a read that started before the stop request still belongs
+ * to the clip.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CaptureSessionTest {
@@ -42,365 +39,317 @@ class CaptureSessionTest {
     val temp = TemporaryFolder()
 
     private val store = CaptureStateStore()
-    private val logs = CopyOnWriteArrayList<String>()
-    private val sessions = mutableListOf<CaptureSession>()
-    private val sources = mutableListOf<FakeAudioSource>()
+    private val harnesses = mutableListOf<LoopHarness>()
 
     private val status: CaptureStatus get() = store.state.value.status
 
-    private class Fixture(val attempt: Int, val session: CaptureSession, val source: FakeAudioSource, val file: File)
-
     @After
     fun tearDown() {
-        sessions.forEach { it.cancel() }
-        sources.forEach { it.shutdown() }
-        sources.forEach { it.awaitReleased() }
+        harnesses.forEach { it.shutdown() }
     }
 
-    private fun TestScope.begin(
-        source: FakeAudioSource = FakeAudioSource(),
-        file: File = File(temp.root, "capture.wav"),
-    ): Fixture {
-        store.dispatch(CaptureEvent.SessionStarted)
-        val attempt = store.dispatch(CaptureEvent.TapStart).attempt
-        val session = CaptureSession(
-            attempt = attempt,
-            source = source,
-            outputFile = file,
-            store = store,
-            scope = backgroundScope,
-            clock = { testScheduler.currentTime },
-            log = logs::add,
-        )
-        sessions += session
-        sources += source
-        session.start()
-        runCurrent()
-        return Fixture(attempt, session, source, file)
-    }
+    private fun TestScope.harness(first: FakeAudioSource = FakeAudioSource()): LoopHarness =
+        LoopHarness(this, store, temp.root, first).also {
+            harnesses += it
+            it.start()
+        }
 
     private fun TestScope.advance(ms: Long) {
         testScheduler.advanceTimeBy(ms)
         runCurrent()
     }
 
-    private fun <T> Deferred<T>.awaitBlocking(): T {
-        val done = CountDownLatch(1)
-        invokeOnCompletion { done.countDown() }
-        if (!done.await(GUARD_SECONDS, TimeUnit.SECONDS)) fail("result did not complete")
-        return getCompleted()
-    }
-
-    private fun eventually(what: String, condition: () -> Boolean) {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(GUARD_SECONDS)
-        while (!condition()) {
-            if (System.nanoTime() > deadline) fail("timed out waiting for $what")
-            Thread.sleep(1)
-        }
-    }
-
-    /** B4: release once, by the reader, after its last read returned. */
-    private fun FakeAudioSource.assertReleasedByReaderAfterLoop() {
-        assertEquals(1, releaseCount.get())
-        assertEquals(listOf(CaptureSession.READER_THREAD_NAME), releaseThreads)
-        assertEquals("release", calls.last())
-        assertEquals(calls.count { it == "read" }, calls.count { it == "returned" })
-    }
-
-    private fun Fixture.statusAtStop(): () -> CaptureStatus? {
-        var seen: CaptureStatus? = null
-        source.onStop = { seen = status }
-        return { seen }
-    }
-
-    private fun logged(text: String) = logs.any { it.contains(text) }
+    private val chunkBytes = CaptureSession.CHUNK_SAMPLES * 2
 
     // First audio and read results
 
     @Test
-    fun `first read with samples moves Preparing to Recording at the clock time`() = runTest {
-        val f = begin()
+    fun `first chunk after the tap moves Preparing to Recording at the clock time`() = runTest {
+        val h = harness()
+        val c = h.tap()
         advance(300)
         assertEquals(Preparing, status)
 
-        f.source.samples(1, LOUD)
-        f.source.awaitIdle()
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
 
         assertEquals(Recording(300), status)
-        assertTrue(logged("attempt=${f.attempt} first data 300 ms after start"))
+        assertTrue(h.logged("attempt=${c.attempt} first data 300 ms after start"))
     }
 
     @Test
     fun `reads returning 0 are not audio and are spaced out, logged once`() = runTest {
-        val f = begin()
-        f.source.enqueue(*Array(5) { Step.Code(0) })
-        f.source.awaitIdle()
+        val h = harness()
+        h.tap()
+        h.source.enqueue(*Array(5) { Step.Code(0) })
+        h.source.awaitIdle("read")
         assertEquals(Preparing, status)
 
-        // Five empty reads, each followed by a sleep before the next read.
-        val gapMs = (f.source.readTimesNs[5] - f.source.readTimesNs[0]) / 1_000_000
-        assertTrue("reads 0..5 took $gapMs ms", gapMs >= 45)
-        assertEquals(1, logs.count { it.contains("read returned 0") })
+        val reads = h.source.readTimesNs
+        val gapMs = (reads[reads.size - 1] - reads[reads.size - 6]) / 1_000_000
+        assertTrue("reads took $gapMs ms", gapMs >= 45)
+        assertEquals(1, h.logs.count { it.contains("read returned 0") })
 
-        f.source.samples(1, LOUD)
-        f.source.awaitIdle()
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
         assertEquals(Recording(0), status)
     }
 
     @Test
-    fun `negative read during Preparing fails with ReadError`() = runTest {
-        val f = begin()
-        f.source.enqueue(Step.Code(-3))
+    fun `negative read during Preparing fails with ReadError before the source restarts`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        val first = h.source
+        first.enqueue(Step.Code(-3))
 
-        assertEquals(CaptureResult.Failed(FailureReason.ReadError), f.session.result.awaitBlocking())
+        assertEquals(CaptureResult.Failed(FailureReason.ReadError), c.session.result.awaitBlocking())
         assertEquals(CaptureStatus.Failed(FailureReason.ReadError), status)
-        assertTrue(logged("read failed: code -3"))
-        assertFalse(f.file.exists())
-        f.source.assertReleasedByReaderAfterLoop()
+        assertTrue(h.logged("attempt=${c.attempt} read failed: code -3"))
+        eventually("restart") { h.sources.size == 2 }
+        h.source.awaitIdle("skip")
+        assertTrue(h.logged("read error -3; restart 1/3"))
+        assertFalse(c.file.exists())
+        with(h) { first.assertReleasedOnceByReader() }
+        assertTrue(h.lost.isEmpty())
     }
 
     @Test
     fun `negative read during Recording fails with ReadError`() = runTest {
-        val f = begin()
-        f.source.samples(2, LOUD)
-        f.source.awaitIdle()
-        f.source.enqueue(Step.Code(-6))
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(2, LOUD)
+        h.source.awaitIdle("read")
+        h.source.enqueue(Step.Code(-6))
 
-        assertEquals(CaptureResult.Failed(FailureReason.ReadError), f.session.result.awaitBlocking())
+        assertEquals(CaptureResult.Failed(FailureReason.ReadError), c.session.result.awaitBlocking())
         assertEquals(CaptureStatus.Failed(FailureReason.ReadError), status)
-        assertFalse(f.file.exists())
-        f.source.assertReleasedByReaderAfterLoop()
+        assertFalse(c.file.exists())
+        eventually("restart") { h.sources.size == 2 }
     }
 
     @Test
-    fun `source start failure fails with InitFailed and still releases`() = runTest {
-        val source = FakeAudioSource().apply { startError = IllegalStateException("fake") }
-        val f = begin(source)
+    fun `write IOException fails with ReadError, names the exception and keeps the source`() = runTest {
+        val h = harness()
+        val c = h.tap(file = File(temp.root, "missing-dir/capture.wav"), syncOn = "skip")
 
-        assertEquals(CaptureResult.Failed(FailureReason.InitFailed), f.session.result.awaitBlocking())
-        assertEquals(CaptureStatus.Failed(FailureReason.InitFailed), status)
-        assertTrue(logged("source start failed: IllegalStateException"))
-        assertFalse(f.file.exists())
-        f.source.assertReleasedByReaderAfterLoop()
-    }
-
-    @Test
-    fun `write IOException fails with ReadError and names the exception`() = runTest {
-        val f = begin(file = File(temp.root, "missing-dir/capture.wav"))
-
-        assertEquals(CaptureResult.Failed(FailureReason.ReadError), f.session.result.awaitBlocking())
+        assertEquals(CaptureResult.Failed(FailureReason.ReadError), c.session.result.awaitBlocking())
         assertEquals(CaptureStatus.Failed(FailureReason.ReadError), status)
-        assertTrue(logged("write failed: ${FileNotFoundException::class.java.simpleName}"))
-        f.source.assertReleasedByReaderAfterLoop()
+        assertTrue(h.logged("write failed: ${FileNotFoundException::class.java.simpleName}"))
+        assertEquals(1, h.sources.size)
+        assertEquals(0, h.source.releaseCount.get())
     }
 
-    // Preparing timeout (B4 case 2, N1)
+    // Preparing timeout
 
     @Test
-    fun `no audio within 2 s fails with PreparingTimeout and the reader releases after exit`() = runTest {
-        val f = begin()
+    fun `no audio within 2 s fails with PreparingTimeout without stopping the source`() = runTest {
+        val h = harness()
+        val c = h.tap()
         advance(1_999)
         assertEquals(Preparing, status)
-        assertEquals(0, f.source.stopCount.get())
 
         advance(1)
         assertEquals(CaptureStatus.Failed(FailureReason.PreparingTimeout), status)
         // The controller claims the outcome at once.
-        assertTrue(f.session.result.isCompleted)
-        assertEquals(CaptureResult.Failed(FailureReason.PreparingTimeout), f.session.result.getCompleted())
-        assertEquals(1, f.source.stopCount.get())
+        assertEquals(CaptureResult.Failed(FailureReason.PreparingTimeout), c.session.result.getCompleted())
+        assertEquals(0, h.source.stopCount.get())
 
-        f.source.awaitReleased()
-        f.source.assertReleasedByReaderAfterLoop()
-        assertFalse(f.file.exists())
+        // The in-flight read returns; the reader then detaches and discards the clip.
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("skip")
+        assertFalse(c.file.exists())
         assertEquals(CaptureStatus.Failed(FailureReason.PreparingTimeout), status)
+        assertEquals(0, h.source.releaseCount.get())
     }
 
     @Test
     fun `first audio just before the timeout keeps recording`() = runTest {
-        val f = begin()
+        val h = harness()
+        h.tap()
         advance(1_999)
-        f.source.samples(1, LOUD)
-        f.source.awaitIdle()
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
         assertEquals(Recording(1_999), status)
 
         advance(1)
         assertEquals(Recording(1_999), status)
-        assertEquals(0, f.source.stopCount.get())
     }
 
-    // Manual stop (B4 case 1)
+    // Manual stop
 
     @Test
-    fun `manual stop moves to Processing at once, then saves a valid clip`() = runTest {
-        val f = begin()
-        val atStop = f.statusAtStop()
-        f.source.samples(5, LOUD)
-        f.source.awaitIdle()
+    fun `manual stop moves to Processing at once, keeps the in-flight read and saves the clip`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(5, LOUD)
+        h.source.awaitIdle("read")
 
-        f.session.stop()
+        c.session.stop()
+        assertEquals(Processing, status)
+        // The read that was in flight at the stop started before it.
+        h.source.samples(1, LOUD)
 
-        assertEquals(CaptureResult.Saved(f.file), f.session.result.awaitBlocking())
-        assertEquals(Processing, atStop())
+        assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
         assertEquals(Ready, status)
-        f.source.awaitReleased()
-        f.source.assertReleasedByReaderAfterLoop()
-        val bytes = f.file.readBytes()
-        assertEquals(44 + 5 * CaptureSession.CHUNK_SAMPLES * 2, bytes.size)
-        WavWriterTest.assertHeader(bytes, dataBytes = 5 * CaptureSession.CHUNK_SAMPLES * 2)
+        val bytes = c.file.readBytes()
+        assertEquals(44 + 6 * chunkBytes, bytes.size)
+        WavWriterTest.assertHeader(bytes, dataBytes = 6 * chunkBytes)
+        h.source.awaitIdle("skip")
+        assertEquals(0, h.source.stopCount.get())
+        assertEquals(0, h.source.releaseCount.get())
 
         advance(CaptureSession.READER_EXIT_BOUND_MS)
-        assertFalse(logged("reader not exited"))
+        assertFalse(h.logged("reader not detached"))
     }
 
     @Test
     fun `a silent clip fails with NoAudio and is deleted`() = runTest {
-        val f = begin()
-        f.source.samples(5, 0)
-        f.source.awaitIdle()
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(5, 0)
+        h.source.awaitIdle("read")
 
-        f.session.stop()
+        c.session.stop()
+        h.source.samples(1, 0)
 
-        assertEquals(CaptureResult.Failed(FailureReason.NoAudio), f.session.result.awaitBlocking())
+        assertEquals(CaptureResult.Failed(FailureReason.NoAudio), c.session.result.awaitBlocking())
         assertEquals(CaptureStatus.Failed(FailureReason.NoAudio), status)
-        assertTrue(logged("no non-silent frame"))
-        f.source.awaitReleased()
-        assertFalse(f.file.exists())
+        assertTrue(h.logged("no non-silent frame"))
+        assertFalse(c.file.exists())
     }
 
     @Test
-    fun `a negative read after a stop request is a normal exit`() = runTest {
-        val f = begin(FakeAudioSource(returnAfterStop = -3))
-        f.source.samples(3, LOUD)
-        f.source.awaitIdle()
+    fun `a negative read after a stop request ends the clip normally and restarts the source`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(3, LOUD)
+        h.source.awaitIdle("read")
 
-        f.session.stop()
+        c.session.stop()
+        h.source.enqueue(Step.Code(-3))
 
-        assertEquals(CaptureResult.Saved(f.file), f.session.result.awaitBlocking())
+        assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
         assertEquals(Ready, status)
+        eventually("restart") { h.logged("read error -3; restart 1/3") }
     }
 
     @Test
-    fun `stop during Preparing is a no-op and the session still records`() = runTest {
-        val f = begin()
+    fun `stop during Preparing is a no-op and the clip still records`() = runTest {
+        val h = harness()
+        val c = h.tap()
 
-        f.session.stop()
+        c.session.stop()
         assertEquals(Preparing, status)
-        assertEquals(0, f.source.stopCount.get())
 
-        f.source.samples(1, LOUD)
-        f.source.awaitIdle()
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
         assertEquals(Recording(0), status)
 
-        f.session.stop()
-        assertEquals(CaptureResult.Saved(f.file), f.session.result.awaitBlocking())
+        c.session.stop()
+        h.source.samples(1, LOUD)
+        assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
     }
 
-    // Reader that ignores stop (B4 case 3)
+    // Stuck read (bounded wait)
 
     @Test
-    fun `manual stop with a stuck read fails with ReadError after 1 s and releases only when read returns`() =
+    fun `manual stop with a stuck read fails with ReadError after 1 s and discards the clip when it returns`() =
         runTest {
-            val f = begin(FakeAudioSource(ignoreStop = true))
-            f.source.samples(3, LOUD)
-            f.source.awaitIdle()
+            val h = harness()
+            val c = h.tap()
+            h.source.samples(3, LOUD)
+            h.source.awaitIdle("read")
 
-            f.session.stop()
+            c.session.stop()
             assertEquals(Processing, status)
 
             advance(CaptureSession.READER_EXIT_BOUND_MS - 1)
             assertEquals(Processing, status)
-            assertFalse(f.session.result.isCompleted)
+            assertFalse(c.session.result.isCompleted)
 
             advance(1)
             assertEquals(CaptureStatus.Failed(FailureReason.ReadError), status)
-            assertEquals(CaptureResult.Failed(FailureReason.ReadError), f.session.result.getCompleted())
-            assertTrue(logged("reader not exited 1000 ms after stop; source not released (possible leak)"))
-            assertEquals(0, f.source.releaseCount.get())
+            assertEquals(CaptureResult.Failed(FailureReason.ReadError), c.session.result.getCompleted())
+            assertTrue(h.logged("reader not detached 1000 ms after stop; clip abandoned"))
 
-            f.source.finishBlockedRead()
-            f.source.awaitReleased()
-            f.source.assertReleasedByReaderAfterLoop()
-            assertFalse(f.file.exists())
-            eventually("late exit log") { logged("reader exited late; source released") }
+            h.source.samples(1, LOUD)
+            h.source.awaitIdle("skip")
+            assertFalse(c.file.exists())
+            eventually("late detach log") { h.logged("reader detached late; clip discarded") }
             assertEquals(CaptureStatus.Failed(FailureReason.ReadError), status)
         }
 
     @Test
-    fun `Preparing timeout with a stuck read keeps PreparingTimeout and releases only when read returns`() =
+    fun `Preparing timeout with a stuck read keeps PreparingTimeout and discards the clip when it returns`() =
         runTest {
-            val f = begin(FakeAudioSource(ignoreStop = true))
+            val h = harness()
+            val c = h.tap()
 
             advance(CaptureSession.PREPARING_TIMEOUT_MS)
             assertEquals(CaptureStatus.Failed(FailureReason.PreparingTimeout), status)
-            assertEquals(CaptureResult.Failed(FailureReason.PreparingTimeout), f.session.result.getCompleted())
 
             advance(CaptureSession.READER_EXIT_BOUND_MS)
-            assertTrue(logged("reader not exited"))
+            assertTrue(h.logged("reader not detached"))
             assertEquals(CaptureStatus.Failed(FailureReason.PreparingTimeout), status)
-            assertEquals(0, f.source.releaseCount.get())
 
-            f.source.finishBlockedRead()
-            f.source.awaitReleased()
-            f.source.assertReleasedByReaderAfterLoop()
-            assertFalse(f.file.exists())
+            h.source.samples(1, LOUD)
+            h.source.awaitIdle("skip")
+            assertFalse(c.file.exists())
         }
 
     // 300 s dual cap
 
     @Test
     fun `sample cap stops at exactly 4,800,000 samples`() = runTest {
-        val source = FakeAudioSource().apply { endless = Step.Samples(1_000, LOUD) }
-        val f = begin(source)
+        val h = harness()
+        val c = h.tap()
+        h.source.endless = Step.Samples(1_000, LOUD)
 
-        assertEquals(CaptureResult.Saved(f.file), f.session.result.awaitBlocking())
+        assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
+        h.source.endless = null
         assertEquals(Ready, status)
-        assertTrue(logged("limit reached by sample count"))
-        assertEquals(0, f.source.stopCount.get())
+        assertTrue(h.logged("limit reached by sample count"))
         val dataBytes = CaptureSession.MAX_SAMPLES * 2
         assertEquals(4_800_000, CaptureSession.MAX_SAMPLES)
-        assertEquals(44L + dataBytes, f.file.length())
-        WavWriterTest.assertHeader(f.file.inputStream().use { it.readNBytes(44) }, dataBytes)
-        f.source.awaitReleased()
-        f.source.assertReleasedByReaderAfterLoop()
+        assertEquals(44L + dataBytes, c.file.length())
+        WavWriterTest.assertHeader(c.file.inputStream().use { it.readNBytes(44) }, dataBytes)
     }
 
     @Test
-    fun `clock cap fires 300 s after first audio even while read blocks`() = runTest {
-        val f = begin()
-        val atStop = f.statusAtStop()
+    fun `clock cap fires 300 s after first audio`() = runTest {
+        val h = harness()
+        val c = h.tap()
         advance(1_500)
-        f.source.samples(1, LOUD)
-        f.source.awaitIdle()
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
         assertEquals(Recording(1_500), status)
 
         advance(CaptureSession.MAX_DURATION_MS - 1)
         assertEquals(Recording(1_500), status)
-        assertEquals(0, f.source.stopCount.get())
 
         advance(1)
-        assertEquals(CaptureResult.Saved(f.file), f.session.result.awaitBlocking())
-        assertEquals(Processing, atStop())
+        assertEquals(Processing, status)
+        h.source.samples(1, LOUD)
+        assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
         assertEquals(Ready, status)
-        assertTrue(logged("limit reached by clock"))
-        f.source.awaitReleased()
-        f.source.assertReleasedByReaderAfterLoop()
+        assertTrue(h.logged("limit reached by clock"))
     }
 
     // Cancel
 
     @Test
-    fun `cancel sends no event, never finalises, and the reader releases`() = runTest {
-        val f = begin()
-        f.source.samples(3, LOUD)
-        f.source.awaitIdle()
+    fun `cancel sends no event, never finalises, and the clip is discarded`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(3, LOUD)
+        h.source.awaitIdle("read")
 
-        f.session.cancel()
+        c.session.cancel()
 
-        assertEquals(CaptureResult.Cancelled, f.session.result.getCompleted())
-        f.source.awaitReleased()
-        f.source.assertReleasedByReaderAfterLoop()
-        assertFalse(f.file.exists())
+        assertEquals(CaptureResult.Cancelled, c.session.result.getCompleted())
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("skip")
+        assertFalse(c.file.exists())
         assertEquals(Recording(0), status)
     }
 
@@ -408,30 +357,34 @@ class CaptureSessionTest {
 
     @Test
     fun `diagnostics report first non-silent offset and loudest frame level`() = runTest {
-        val f = begin()
-        f.source.samples(3, 0)
-        f.source.samples(1, 1_000)
-        f.source.awaitIdle()
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(3, 0)
+        h.source.samples(1, 1_000)
+        h.source.awaitIdle("read")
 
-        f.session.stop()
+        c.session.stop()
+        h.source.samples(1, 0)
 
-        assertEquals(CaptureResult.Saved(f.file), f.session.result.awaitBlocking())
-        assertTrue(logged("attempt=${f.attempt} first non-silent frame 300 ms after first data"))
-        assertTrue(logged("attempt=${f.attempt} loudest frame -30.3 dBFS"))
+        assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
+        assertTrue(h.logged("attempt=${c.attempt} first non-silent frame 300 ms after first data"))
+        assertTrue(h.logged("attempt=${c.attempt} loudest frame -30.3 dBFS"))
     }
 
     // Hardening (H1, H2)
 
     @Test
     fun `H1 a stale session's stop leaves the newer attempt in Recording`() = runTest {
-        val old = begin(file = File(temp.root, "old.wav"))
-        old.source.samples(1, LOUD)
-        old.source.awaitIdle()
+        val oldLoop = harness()
+        val old = oldLoop.tap(file = File(temp.root, "old.wav"))
+        oldLoop.source.samples(1, LOUD)
+        oldLoop.source.awaitIdle("read")
         store.dispatch(CaptureEvent.SessionEnded)
 
-        val current = begin(file = File(temp.root, "current.wav"))
-        current.source.samples(1, LOUD)
-        current.source.awaitIdle()
+        val currentLoop = harness()
+        val current = currentLoop.tap(file = File(temp.root, "current.wav"))
+        currentLoop.source.samples(1, LOUD)
+        currentLoop.source.awaitIdle("read")
         assertEquals(current.attempt, store.state.value.attempt)
         assertTrue(status is Recording)
 
@@ -439,20 +392,22 @@ class CaptureSessionTest {
 
         assertTrue(status is Recording)
         assertEquals(current.attempt, store.state.value.attempt)
-        assertEquals(0, old.source.stopCount.get())
+        assertFalse(old.session.result.isCompleted)
     }
 
     @Test
     fun `H2 an unexpected exception while finalising fails with ReadError and deletes the file`() = runTest {
+        val h = harness()
         val file = ThrowOnceFile(temp.root, "capture.wav")
-        val f = begin(file = file)
-        f.source.samples(3, LOUD)
-        f.source.awaitIdle()
+        val c = h.tap(file = file)
+        h.source.samples(3, LOUD)
+        h.source.awaitIdle("read")
         file.armed = true
 
-        f.session.stop()
+        c.session.stop()
+        h.source.samples(1, LOUD)
 
-        assertEquals(CaptureResult.Failed(FailureReason.ReadError), f.session.result.awaitBlocking())
+        assertEquals(CaptureResult.Failed(FailureReason.ReadError), c.session.result.awaitBlocking())
         assertEquals(CaptureStatus.Failed(FailureReason.ReadError), status)
         assertFalse(File(file.parentFile, file.name).exists())
     }
@@ -468,9 +423,5 @@ class CaptureSessionTest {
             }
             return super.getPath()
         }
-    }
-
-    private companion object {
-        const val LOUD: Short = 1_000
     }
 }
