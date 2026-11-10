@@ -17,6 +17,13 @@ import com.dennycgan.hearcopy.state.CaptureStatus.Ready
 import com.dennycgan.hearcopy.state.CaptureStatus.Recording
 
 /**
+ * Shortest clip that is kept, in milliseconds from the first audio to the
+ * stop tap, on the overlay timer's clock. Shorter clips are discarded
+ * without an upload.
+ */
+const val MIN_CLIP_MS = 1_000L
+
+/**
  * Pure state transition. Any event that does not apply to the current
  * state returns the state unchanged.
  */
@@ -46,7 +53,18 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
             state
         }
 
-    TapStop -> if (state.status is Recording) state.copy(status = Processing) else state
+    // A clip stopped while the timer still shows 00:00 is discarded: back
+    // to Ready, no Failed state, the attempt stays so its late events
+    // find nothing to change.
+    is TapStop -> when (val status = state.status) {
+        is Recording ->
+            if (event.atMs - status.startedAtMs < MIN_CLIP_MS) {
+                state.copy(status = Ready)
+            } else {
+                state.copy(status = Processing)
+            }
+        else -> state
+    }
 
     is FirstAudio -> state.forAttempt(event.attempt) {
         if (status == Preparing) copy(status = Recording(event.atMs)) else this

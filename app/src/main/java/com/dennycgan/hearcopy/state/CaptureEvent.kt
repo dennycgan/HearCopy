@@ -15,7 +15,11 @@ sealed interface CaptureEvent {
 
     data object TapStart : CaptureEvent
 
-    data object TapStop : CaptureEvent
+    /**
+     * Manual stop at [atMs], on the monotonic clock of the overlay timer
+     * (the clock of [CaptureStatus.Recording.startedAtMs]).
+     */
+    data class TapStop(val atMs: Long) : CaptureEvent
 
     data class FirstAudio(val attempt: Int, val atMs: Long) : CaptureEvent
 

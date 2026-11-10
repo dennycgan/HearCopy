@@ -9,6 +9,7 @@ import com.dennycgan.hearcopy.capture.LoopHarness.Companion.eventually
 import com.dennycgan.hearcopy.state.CaptureEvent
 import com.dennycgan.hearcopy.state.CaptureStateStore
 import com.dennycgan.hearcopy.state.CaptureStatus.Ready
+import com.dennycgan.hearcopy.state.MIN_CLIP_MS
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -59,8 +60,9 @@ class CaptureLoopTest {
         return ShortArray(data.remaining()).also { data.get(it) }
     }
 
-    /** Stops [clip] and feeds the read that was in flight. */
+    /** Stops [clip] once it is long enough to keep, and feeds the read that was in flight. */
     private fun LoopHarness.stopAndSave(clip: LoopHarness.Clip, amplitude: Short = LOUD): CaptureResult {
+        advance(MIN_CLIP_MS)
         clip.session.stop()
         source.samples(1, amplitude)
         return clip.session.result.awaitBlocking()

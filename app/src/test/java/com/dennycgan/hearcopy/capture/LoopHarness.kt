@@ -82,6 +82,12 @@ class LoopHarness(
 
     fun logged(text: String) = logs.any { it.contains(text) }
 
+    /** Moves the test's virtual time (the session and loop clock) by [ms] and runs due tasks. */
+    fun advance(ms: Long) {
+        test.testScheduler.advanceTimeBy(ms)
+        test.runCurrent()
+    }
+
     /** Waits until the reader thread that released [source] has ended. */
     fun awaitReaderExited(source: FakeAudioSource = this.source) {
         source.awaitReleased()

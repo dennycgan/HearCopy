@@ -121,17 +121,57 @@ class ReduceTest {
 
     @Test
     fun `TapStop from Recording enters Processing`() {
-        assertEquals(state(Processing), reduce(state(Recording(10)), TapStop))
+        assertEquals(state(Processing), reduce(state(Recording(10)), TapStop(atMs = 10 + MIN_CLIP_MS)))
     }
 
     @Test
     fun `TapStop outside Recording is ignored, including Preparing`() {
         listOf(Ready, Preparing, Processing, Failed(FailureReason.ReadError)).forEach { status ->
             val before = state(status)
-            assertSame("from $status", before, reduce(before, TapStop))
+            assertSame("from $status", before, reduce(before, TapStop(atMs = 5_000)))
         }
     }
 
+    // Minimum clip length
+
+    @Test
+    fun `the minimum clip length is one second`() {
+        assertEquals(1_000L, MIN_CLIP_MS)
+    }
+
+    @Test
+    fun `TapStop exactly MIN_CLIP_MS after first audio keeps the clip`() {
+        assertEquals(state(Processing), reduce(state(Recording(500)), TapStop(atMs = 500 + MIN_CLIP_MS)))
+    }
+
+    @Test
+    fun `TapStop before MIN_CLIP_MS discards the clip and returns to Ready without failing`() {
+        listOf(500L, 600L, 500 + MIN_CLIP_MS - 1).forEach { atMs ->
+            val before = state(Recording(500), attempt = 3)
+            assertEquals("stop at $atMs", before.copy(status = Ready), reduce(before, TapStop(atMs)))
+        }
+    }
+
+    @Test
+    fun `late events of a discarded clip leave Ready unchanged`() {
+        val discarded = reduce(state(Recording(500), attempt = 3), TapStop(atMs = 900))
+        listOf(
+            CaptureSaved(3),
+            CaptureFailed(3, FailureReason.ReadError),
+            LimitReached(3),
+            FirstAudio(3, 950),
+            PreparingTimedOut(3),
+            TapStop(atMs = 5_000),
+        ).forEach { event ->
+            assertSame("$event", discarded, reduce(discarded, event))
+        }
+    }
+
+    @Test
+    fun `a new recording starts right after a discarded clip`() {
+        val discarded = reduce(state(Recording(500), attempt = 3), TapStop(atMs = 900))
+        assertEquals(state(Preparing, attempt = 4), reduce(discarded, TapStart))
+    }
     // Capture progress
 
     @Test
@@ -242,7 +282,7 @@ class ReduceTest {
             s = reduce(s, TapStart)
             val attempt = s.attempt
             s = reduce(s, FirstAudio(attempt, atMs = i * 1000L))
-            s = reduce(s, TapStop)
+            s = reduce(s, TapStop(atMs = i * 1000L + MIN_CLIP_MS))
             s = reduce(s, CaptureSaved(attempt))
             assertEquals("recording ${i + 1}", Ready, s.status)
         }

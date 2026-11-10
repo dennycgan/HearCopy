@@ -255,6 +255,7 @@ class CaptureService : Service(), CaptureSessionHandle {
                 is CaptureResult.Saved -> "result: saved ${result.file.name}"
                 is CaptureResult.Failed -> "result: failed ${result.reason}"
                 CaptureResult.Cancelled -> "result: cancelled"
+                CaptureResult.TooShort -> "result: too short"
             },
         )
         if (result is CaptureResult.Saved) {

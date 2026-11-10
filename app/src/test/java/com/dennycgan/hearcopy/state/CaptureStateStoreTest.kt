@@ -25,7 +25,7 @@ class CaptureStateStoreTest {
     fun `an event that does not apply leaves the state unchanged`() {
         val store = CaptureStateStore()
         val before = store.state.value
-        assertEquals(before, store.dispatch(CaptureEvent.TapStop))
+        assertEquals(before, store.dispatch(CaptureEvent.TapStop(atMs = 0)))
         assertEquals(before, store.state.value)
     }
 
@@ -37,7 +37,7 @@ class CaptureStateStoreTest {
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { store.state.toList(seen) }
 
         store.dispatch(CaptureEvent.SessionStarted)
-        store.dispatch(CaptureEvent.TapStop) // no change, no emission
+        store.dispatch(CaptureEvent.TapStop(atMs = 0)) // no change, no emission
         store.dispatch(CaptureEvent.TapStart)
 
         assertEquals(

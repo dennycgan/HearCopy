@@ -27,6 +27,13 @@ sealed interface CaptureResult {
 
     /** Ended by [CaptureSession.cancel]; no state event was sent. */
     data object Cancelled : CaptureResult
+
+    /**
+     * Stopped less than `MIN_CLIP_MS` after the first audio: `TapStop`
+     * already returned the state to Ready. The clip's file is (or will be)
+     * deleted; nothing is uploaded or kept.
+     */
+    data object TooShort : CaptureResult
 }
 
 /**
@@ -69,6 +76,9 @@ class CaptureSession(
     private val detached = CompletableDeferred<Unit>()
 
     @Volatile private var startedAtMs = 0L
+
+    /** Clock time of the first audio; written by the reader before `FirstAudio`. */
+    @Volatile private var firstAudioAtMs = 0L
     @Volatile private var preparingTimer: Job? = null
     @Volatile private var limitTimer: Job? = null
     @Volatile private var reportedStuck = false
@@ -98,16 +108,35 @@ class CaptureSession(
     }
 
     /**
-     * Manual stop. Dispatches `TapStop`; continues only if that leaves this
-     * attempt in Processing, otherwise (for example in Preparing) a no-op.
+     * Manual stop. Dispatches `TapStop` stamped with [clock] at the tap.
+     * Processing: the clip is finalised as usual. Ready: the clip was
+     * shorter than `MIN_CLIP_MS` and is discarded. Otherwise (for example
+     * in Preparing) a no-op.
      * A session whose attempt is no longer current returns at once:
      * `TapStop` carries no attempt and would move the newer attempt instead.
      * Main thread only, like every attempt-changing dispatch.
      */
     fun stop() {
         if (store.state.value.attempt != attempt) return
-        val state = store.dispatch(CaptureEvent.TapStop)
-        if (state.isCurrent(CaptureStatus.Processing)) enterStopPath()
+        val atMs = clock()
+        val state = store.dispatch(CaptureEvent.TapStop(atMs))
+        when {
+            state.isCurrent(CaptureStatus.Processing) -> enterStopPath()
+            state.isCurrent(CaptureStatus.Ready) -> discardTooShort(atMs)
+        }
+    }
+
+    /**
+     * `TapStop` returned this attempt to Ready, which only a too-short clip
+     * does while the outcome is unclaimed. Sends no further event; the
+     * reader deletes the clip when it detaches it.
+     */
+    private fun discardTooShort(atMs: Long) {
+        if (!outcomeClaimed.compareAndSet(false, true)) return
+        log("attempt=$attempt discarded: too short (${atMs - firstAudioAtMs} ms)")
+        mutableResult.complete(CaptureResult.TooShort)
+        cancelTimers()
+        enterStopPath()
     }
 
     /** Teardown. Sends no state event; the clip is discarded. */
@@ -246,6 +275,7 @@ class CaptureSession(
 
     private fun onFirstAudio() {
         val atMs = clock()
+        firstAudioAtMs = atMs
         val state = store.dispatch(CaptureEvent.FirstAudio(attempt, atMs))
         if (!state.isCurrent(CaptureStatus.Recording(atMs))) return
         preparingTimer?.cancel()
@@ -292,7 +322,8 @@ class CaptureSession(
             when (outcome) {
                 is CaptureResult.Saved -> store.dispatch(CaptureEvent.CaptureSaved(attempt))
                 is CaptureResult.Failed -> store.dispatch(CaptureEvent.CaptureFailed(attempt, outcome.reason))
-                CaptureResult.Cancelled -> Unit
+                // Both complete the result directly and send no event here.
+                CaptureResult.Cancelled, CaptureResult.TooShort -> Unit
             }
         } catch (e: Exception) {
             log("attempt=$attempt publish failed: ${e.javaClass.simpleName}")

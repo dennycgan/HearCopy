@@ -32,11 +32,11 @@ class TapActionTest {
             val before = CaptureState(session, status, attempt = 1)
             val event = when (tapAction(status)) {
                 TapAction.Start -> CaptureEvent.TapStart
-                TapAction.Stop -> CaptureEvent.TapStop
+                TapAction.Stop -> CaptureEvent.TapStop(atMs = 1 + MIN_CLIP_MS)
                 TapAction.Ignore, TapAction.Reject -> null
             }
             if (event == null) {
-                listOf(CaptureEvent.TapStart, CaptureEvent.TapStop).forEach {
+                listOf(CaptureEvent.TapStart, CaptureEvent.TapStop(atMs = 1 + MIN_CLIP_MS)).forEach {
                     assertEquals("$it in $status", before, reduce(before, it))
                 }
             } else {

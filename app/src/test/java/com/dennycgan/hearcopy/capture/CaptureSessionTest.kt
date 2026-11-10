@@ -12,6 +12,7 @@ import com.dennycgan.hearcopy.state.CaptureStatus.Processing
 import com.dennycgan.hearcopy.state.CaptureStatus.Ready
 import com.dennycgan.hearcopy.state.CaptureStatus.Recording
 import com.dennycgan.hearcopy.state.FailureReason
+import com.dennycgan.hearcopy.state.MIN_CLIP_MS
 import java.io.File
 import java.io.FileNotFoundException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -184,6 +185,7 @@ class CaptureSessionTest {
         h.source.samples(5, LOUD)
         h.source.awaitIdle("read")
 
+        advance(MIN_CLIP_MS)
         c.session.stop()
         assertEquals(Processing, status)
         // The read that was in flight at the stop started before it.
@@ -209,6 +211,7 @@ class CaptureSessionTest {
         h.source.samples(5, 0)
         h.source.awaitIdle("read")
 
+        advance(MIN_CLIP_MS)
         c.session.stop()
         h.source.samples(1, 0)
 
@@ -225,6 +228,7 @@ class CaptureSessionTest {
         h.source.samples(3, LOUD)
         h.source.awaitIdle("read")
 
+        advance(MIN_CLIP_MS)
         c.session.stop()
         h.source.enqueue(Step.Code(-3))
 
@@ -245,9 +249,100 @@ class CaptureSessionTest {
         h.source.awaitIdle("read")
         assertEquals(Recording(0), status)
 
+        advance(MIN_CLIP_MS)
         c.session.stop()
         h.source.samples(1, LOUD)
         assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
+    }
+
+    // Minimum clip length
+
+    @Test
+    fun `a stop before the minimum clip length returns to Ready at once and deletes the clip`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(3, LOUD)
+        h.source.awaitIdle("read")
+        advance(MIN_CLIP_MS - 1)
+
+        c.session.stop()
+        assertEquals(Ready, status)
+        assertEquals(c.attempt, store.state.value.attempt)
+        assertEquals(CaptureResult.TooShort, c.session.result.getCompleted())
+        assertTrue(h.logged("attempt=${c.attempt} discarded: too short (999 ms)"))
+
+        // The read in flight at the stop ends the clip; the reader deletes it.
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("skip")
+        assertFalse(c.file.exists())
+        assertEquals(Ready, status)
+        assertEquals(0, h.source.stopCount.get())
+
+        advance(CaptureSession.READER_EXIT_BOUND_MS)
+        assertFalse(h.logged("reader not detached"))
+        assertFalse(h.logged("no non-silent frame"))
+        assertEquals(Ready, status)
+    }
+
+    @Test
+    fun `the minimum is measured from first audio, not from the tap`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        advance(1_500)
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
+        assertEquals(Recording(1_500), status)
+        advance(MIN_CLIP_MS - 1)
+
+        c.session.stop()
+        assertEquals(Ready, status)
+        assertEquals(CaptureResult.TooShort, c.session.result.getCompleted())
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("skip")
+        assertFalse(c.file.exists())
+    }
+
+    @Test
+    fun `a stuck read after a too-short stop keeps Ready and deletes the clip when it returns`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
+        advance(500)
+
+        c.session.stop()
+        advance(CaptureSession.READER_EXIT_BOUND_MS)
+        assertTrue(h.logged("reader not detached"))
+        assertEquals(Ready, status)
+        assertEquals(CaptureResult.TooShort, c.session.result.getCompleted())
+
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("skip")
+        assertFalse(c.file.exists())
+        assertEquals(Ready, status)
+    }
+
+    @Test
+    fun `the next tap after a discarded clip records a new attempt`() = runTest {
+        val h = harness()
+        val first = h.tap(file = File(temp.root, "first.wav"))
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
+        first.session.stop()
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("skip")
+        assertEquals(Ready, status)
+
+        val second = h.tap(file = File(temp.root, "second.wav"))
+        assertEquals(first.attempt + 1, second.attempt)
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
+        advance(MIN_CLIP_MS)
+        second.session.stop()
+        h.source.samples(1, LOUD)
+
+        assertEquals(CaptureResult.Saved(second.file), second.session.result.awaitBlocking())
+        assertFalse(first.file.exists())
     }
 
     // Stuck read (bounded wait)
@@ -260,6 +355,7 @@ class CaptureSessionTest {
             h.source.samples(3, LOUD)
             h.source.awaitIdle("read")
 
+            advance(MIN_CLIP_MS)
             c.session.stop()
             assertEquals(Processing, status)
 
@@ -363,6 +459,7 @@ class CaptureSessionTest {
         h.source.samples(1, 1_000)
         h.source.awaitIdle("read")
 
+        advance(MIN_CLIP_MS)
         c.session.stop()
         h.source.samples(1, 0)
 
@@ -404,6 +501,7 @@ class CaptureSessionTest {
         h.source.awaitIdle("read")
         file.armed = true
 
+        advance(MIN_CLIP_MS)
         c.session.stop()
         h.source.samples(1, LOUD)
 
