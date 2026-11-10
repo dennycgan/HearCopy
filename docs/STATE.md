@@ -6,16 +6,15 @@ details live in DECISIONS.md.
 ## Capability Roadmap
 
 - [x] Cap 0 Foundation
-- [~] Cap 1 Capture session + hearcopyTouch  <- YOU ARE HERE
-  - Android 11: overlay permission guidance must not promise to open
-    HearCopy's own settings page.
-  - Android 11: check RECORD_AUDIO before every recording start.
-- [ ] Cap 2 Transcription loop
+- [x] Cap 1 Capture session + hearcopyTouch
+- [ ] Cap 2 Transcription loop  <- YOU ARE HERE
   - Decide where the API key comes from before Cap 2 design (settings
     page is Cap 3).
-  - Decide how to handle very short clips from accidental double taps: a
-    second tap just after the button turns red stops the recording, and
-    each such clip would be uploaded and billed.
+  - Minimum clip length 1.0 s, measured on the overlay timer clock
+    (elapsedRealtime at the stop minus first audio): stopped while the
+    timer shows 00:00 -> clip deleted, no upload, previous transcript
+    kept, no Failed state, back to Ready. Worth an ADR at the Cap 2 work
+    commit.
   - Verify the Processing reject haptic on Device-A (Cap 1 D1); the
     system touch-vibration setting must be on.
 - [ ] Cap 3 Main UI, settings and lifecycle completion
@@ -23,7 +22,10 @@ details live in DECISIONS.md.
     reads and writes it only through state/ and CaptureCommands (Rule 4),
     never overlay -> data/.
 - [ ] V1 release
-  - Includes Device-B (Android 11) full flow.
+  - Includes Device-B (Android 11) full flow, including: the overlay
+    permission guidance does not promise HearCopy's own settings page;
+    RECORD_AUDIO is re-checked at every recording start ('Only this
+    time').
   - App icon (clears lint MissingApplicationIcon; icon vectors must use
     @color references or need a CopyAndThemeTest decision).
   - Keep or remove the debug-only WAV retention (debug builds keep the
@@ -31,32 +33,9 @@ details live in DECISIONS.md.
   - README discloses continuous playback capture during an active
     session; only audio after a tap is kept.
 
-## Phase Roadmap (Cap 1 Capture session + hearcopyTouch)
+## Phase Roadmap (Cap 2 Transcription loop)
 
-- [x] 1.1 State model: CaptureState, pure reduce, tapAction,
-  CaptureStateStore, JVM tests; coroutines libraries (6b0ff0f)
-- [x] 1.2 Capture pipeline: AudioSource, CaptureSession, WavWriter,
-  SilenceDetector, 300 s dual cap, 2 s Preparing timeout; JVM tests
-  (4a0011a)
-- [x] 1.3 First real capture on Device-A: 48 kHz capture decimated to
-  16 kHz (ADR-004), CaptureService, PlaybackCaptureSource,
-  CaptureCommands, AppContainer wiring, notification channels, temporary
-  main screen, manifest permissions, minimal hearcopyTouch, temp files and
-  startup cleanup, debug-only WAV retention, diagnostics; plus
-  CaptureSession hardening H1 (stale-session stop guard) and H2 (reader
-  outcome guard) (5ce3820)
-- [x] 1.4 Capture start without speaker dropout: continuous capture
-  during a session (ADR-005), CaptureLoop, per-attempt clip at chunk
-  boundaries, source skip, restart budget; JVM tests (79fcc26)
-- [x] 1.5 hearcopyTouch complete: drag with touch slop, Recording timer,
-  Processing ring and haptic, Preparing taps ignored, translucency by
-  status, in-memory position in panel coordinates with clamp (ADR-006)
-  (89a024a)
-- [ ] 1.6 Lifecycle rules: back to background, Recents teardown, reopen
-  reuse or re-request, authorisation lost (hide, alert, stop), single main
-  screen instance, no duplicate button
-  - Capture loss ends the session without an alert now; the alert comes
-    with 1.6 (ADR-005).
+- Not scoped yet: Cap 2 phases await the owner's approved scope.
 
 ## Known debt
 

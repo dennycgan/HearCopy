@@ -256,3 +256,101 @@ native rates.
   trigger a clamp; not observed as a problem on Device-A.
 - Panel size comes from Display.getRealSize, deprecated from API 31 but
   still used for all levels; revisit if it misreports on Device-B.
+
+## ADR-007: Capture session lifecycle
+> A session ends by Recents removal without an alert, or by lost authorisation with the button hidden at once and an alert; reopening reuses the live session or asks for consent again.
+- Status: Accepted (2026-11-10)
+- Anchor: cc0a16a
+### Context
+- The product spec's lifecycle rules: removing HearCopy from Recents ends
+  the session; reopening reuses the session or asks again; lost
+  authorisation hides the button (not greyed out), alerts, and never
+  shows a false Ready or Recording.
+- The spec lists a reopen case "service running, projection invalid".
+- Revoking the overlay permission is an app-op change: the process lives
+  and the window manager only hides the button, so capture would go on
+  with no way to stop a recording.
+- On Device-A, removeView deferred the window removal until teardown
+  returned; AudioRecord.stop() after an external projection stop took
+  1054 ms, so the button stayed visible for about 1.1 s.
+### Decision
+- Teardown reasons: UserEnded (Recents, via onTaskRemoved) and Internal
+  post no alert; ProjectionLost, PermissionLost (RECORD_AUDIO at a start,
+  the overlay app-op, an overlay that cannot be shown) and CaptureLost
+  (the ADR-005 capture loop gives up) hide the button and post the alert.
+- The service stops only once no transcription is in flight; Cap 1 has
+  none and stops at once. Cap 2 designs the in-flight case.
+- Overlay: an AppOps watcher posts to the main thread and re-checks
+  Settings.canDrawOverlays; teardown only when it is false.
+- Teardown runs on the main thread once per service instance; later
+  calls return early. The button is removed first, with
+  removeViewImmediate.
+- The alert opens the single MainActivity through the launcher intent
+  with an extra; it re-enables auto-advance. A new session cancels a
+  stale alert.
+- Back moves the task to the background on API 29-30; API 31+ does this
+  by default.
+### Consequences
+- Reopen has two cases: reuse, or start fresh and ask for consent. The
+  case "service running, projection invalid" cannot persist.
+- Process death cannot alert; the next open recovers from the true state.
+- Measured on Device-A: onStop -> button hidden 63 ms (was about 1.1 s
+  with removeView). AudioRecord.stop() still blocks the main thread for
+  about 1 s after an external stop, with no visible effect.
+- On Device-A, Recents removal runs onTaskRemoved and the full teardown,
+  and the system reclaims the process about 1 s later; startup cleanup
+  covers a kill that comes first.
+- The alert posts even with HearCopy in front.
+- Granting consent again stops any other app's projection (one
+  projection at a time).
+- Observed behaviour of another app on Device-A: when HearCopy takes the
+  projection back while a third-party screen recorder is recording, the
+  recorder's end-of-recording handling stops HearCopy's new projection
+  79-128 ms after the session starts; this is handled as ProjectionLost,
+  and the next consent keeps a stable session.
+
+## ADR-008: Capture source built through a factory type
+> CaptureService gets its audio source from a factory that AppContainer holds, so the source is constructed only in AppContainer and the projection type stays in the two allowed files.
+- Status: Accepted (2026-11-08)
+- Anchor: 5ce3820
+### Context
+- Rule 7: concrete implementations are constructed only in AppContainer.
+- Rule 2: MediaProjection appears only in CaptureService and
+  PlaybackCaptureSource.
+- The source needs the session's projection, which exists only inside
+  the service after consent.
+### Decision
+- capture/PlaybackCaptureSource.kt declares
+  typealias AudioSourceFactory = (MediaProjection) -> AudioSource.
+- AppContainer holds val audioSourceFactory: AudioSourceFactory =
+  { PlaybackCaptureSource(it) }. At the anchor the service called it once
+  per recording attempt; since ADR-005 it calls it once per session and
+  once per capture restart.
+- Rejected: constructing the source in CaptureService (breaks Rule 7);
+  editing a guard to allow it.
+### Consequences
+- Both rules hold without a guard change.
+- Tests substitute a fake source through the same function type.
+- The factory takes a MediaProjection, so the V2 microphone source that
+  the product spec reserves, which needs no projection, will need a
+  different factory shape.
+
+## ADR-009: Debug-only clip retention
+> Debug builds keep the last three valid clips for listening checks; release builds keep nothing.
+- Status: Accepted (2026-11-08)
+- Anchor: 5ce3820
+### Context
+- Capture quality on the device can only be judged by listening to the
+  clips; Cap 1 has no transcription.
+- The product keeps no audio after processing.
+### Decision
+- Gated at runtime by ApplicationInfo.FLAG_DEBUGGABLE; no build-file
+  change.
+- The last three valid clips are kept as no_backup/debug/capture-1.wav
+  .. capture-3.wav, rotating; failed, cancelled and silent clips are not
+  kept.
+- Startup cleanup empties only no_backup/capture/, never debug/.
+### Consequences
+- Debuggable installs hold up to three clips of captured audio in
+  app-private, no-backup storage.
+- Release builds behave as the product spec says.
