@@ -92,14 +92,17 @@ class HearCopyTouch(
     private var activePointer = MotionEvent.INVALID_POINTER_ID
     private var pendingLayout: ViewTreeObserver.OnGlobalLayoutListener? = null
 
-    /** Idempotent: one View, added only if not added yet. */
-    fun show() {
-        if (scope != null) return
+    /**
+     * Idempotent: one View, added only if not added yet. Returns whether the
+     * View is attached (false when the window manager refused it).
+     */
+    fun show(): Boolean {
+        if (scope != null) return true
         try {
             windowManager.addView(view, params)
         } catch (e: RuntimeException) {
             Log.w(TAG, "overlay not shown: ${e.javaClass.simpleName}")
-            return
+            return false
         }
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { s ->
             s.launch {
@@ -111,6 +114,7 @@ class HearCopyTouch(
             }
         }
         if (stored == null) afterNextLayout { correctOverflow(ClampTrigger.Initial) }
+        return true
     }
 
     fun hide() {
@@ -120,7 +124,9 @@ class HearCopyTouch(
         scope = null
         view.clearVisual()
         activePointer = MotionEvent.INVALID_POINTER_ID
-        windowManager.removeView(view)
+        // removeView only posts the removal to this looper, so the button
+        // stayed up until the rest of the teardown (AudioRecord.stop) returned.
+        windowManager.removeViewImmediate(view)
     }
 
     private fun render(status: CaptureStatus) {

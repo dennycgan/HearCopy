@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
@@ -18,6 +19,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.dennycgan.hearcopy.HearCopyApplication
 import com.dennycgan.hearcopy.ui.theme.HearCopyTheme
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Temporary main screen (replaced in Cap 3). Walks the setup steps in order
@@ -53,6 +57,9 @@ class MainActivity : ComponentActivity() {
     private var inFlight = false
     private var notificationsAsked = false
 
+    /** Lives from onCreate to onDestroy, so it also runs while in the background. */
+    private val uiScope = MainScope()
+
     private val overlayLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         inFlight = false
         // The settings page returns no result; read the permission itself.
@@ -84,6 +91,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         declined = savedInstanceState?.getBoolean(KEY_DECLINED) ?: false
         inFlight = savedInstanceState?.getBoolean(KEY_IN_FLIGHT) ?: false
+        // Back sends the app to the background, never closes it. API 31+
+        // already does that for a root launcher activity; enabling this
+        // there would also turn off the predictive back-to-home animation.
+        val backToBackground = object : OnBackPressedCallback(Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            override fun handleOnBackPressed() {
+                moveTaskToBack(true)
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, backToBackground)
+        // Clear the guard once the session is up, even with this screen in
+        // the background. Clearing only on resume missed a session that
+        // ended before the next resume: the guard stayed set, the status
+        // line stayed on "Starting" and consent was never asked again.
+        uiScope.launch {
+            container.store.state.collect { if (it.setup.projectionActive) awaitingSession = false }
+        }
         setContent {
             val state by container.store.state.collectAsState()
             HearCopyTheme {
@@ -102,6 +125,23 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         outState.putBoolean(KEY_DECLINED, declined)
         outState.putBoolean(KEY_IN_FLIGHT, inFlight)
+    }
+
+    /**
+     * The single instance reached again (singleTask). Runs before onResume,
+     * so a tap on the alert re-enables auto-advance for that resume. A new
+     * instance needs no such check: it starts with [declined] clear, and
+     * an instance restored after process death gets the alert intent here.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (container.captureCommands.isAlertIntent(intent)) declined = false
+    }
+
+    override fun onDestroy() {
+        uiScope.cancel()
+        super.onDestroy()
     }
 
     override fun onResume() {

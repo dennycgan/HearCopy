@@ -31,6 +31,8 @@
     <string name="channel_alerts_name">Alerts</string>
     <string name="notification_session_title">HearCopy is ready</string>
     <string name="notification_session_text">Tap the floating button to capture audio.</string>
+    <string name="notification_lost_title">Audio capture stopped</string>
+    <string name="notification_lost_text">The floating button is gone. Tap to open HearCopy and start again.</string>
 
     <!-- hearcopyTouch -->
     <string name="touch_timer">%1$02d:%2$02d</string>

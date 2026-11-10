@@ -2,6 +2,7 @@ package com.dennycgan.hearcopy.capture
 
 import android.Manifest
 import android.app.Activity
+import android.app.AppOpsManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -14,6 +15,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import com.dennycgan.hearcopy.HearCopyApplication
 import com.dennycgan.hearcopy.notify.CaptureNotifications
@@ -36,8 +38,26 @@ import kotlinx.coroutines.withContext
  */
 class CaptureService : Service(), CaptureSessionHandle {
 
-    /** Why the session ends (Cap 1 design 3.6). */
-    enum class TeardownReason { UserEnded, ProjectionLost, PermissionLost, Internal }
+    /**
+     * Why the session ends. [postsAlert]: the user did not end the session
+     * and may be in another app when the button disappears.
+     */
+    enum class TeardownReason(val postsAlert: Boolean) {
+        /** HearCopy was removed from Recents. */
+        UserEnded(false),
+
+        /** The projection was stopped from outside (another capture, the system). */
+        ProjectionLost(true),
+
+        /** RECORD_AUDIO or the overlay permission is missing. */
+        PermissionLost(true),
+
+        /** The continuous capture could not start or gave up (ADR-005). */
+        CaptureLost(true),
+
+        /** Our own safety net, or a rejected consent result with HearCopy in front. */
+        Internal(false),
+    }
 
     private val container by lazy { (application as HearCopyApplication).container }
     private val store by lazy { container.store }
@@ -48,12 +68,21 @@ class CaptureService : Service(), CaptureSessionHandle {
     private var overlay: HearCopyTouch? = null
     private var session: CaptureSession? = null
     private var loop: CaptureLoop? = null
+    private var overlayWatcher: AppOpsManager.OnOpChangedListener? = null
+
+    /**
+     * Set first thing in [teardown] and never cleared: an instance is not
+     * reused after a teardown, so any later teardown call does nothing.
+     */
     private var stopping = false
+
+    /** Main-thread handler for the projection callback and the overlay re-check. */
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
             if (stopping) return
-            log("projection stopped externally")
+            log("projection stopped externally at=${SystemClock.elapsedRealtime()}")
             teardown(TeardownReason.ProjectionLost)
         }
     }
@@ -102,11 +131,21 @@ class CaptureService : Service(), CaptureSessionHandle {
             teardown(TeardownReason.Internal)
             return START_NOT_STICKY
         }
-        granted.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
+        granted.registerCallback(projectionCallback, mainHandler)
         projection = granted
+        // An alert from an earlier session no longer applies.
+        container.notifications.cancelAuthorisationLostAlert()
         store.dispatch(CaptureEvent.SessionStarted)
         if (!startLoop(granted)) return START_NOT_STICKY
-        overlay = HearCopyTouch(this, store.state, container.captureCommands).also { it.show() }
+        val touch = HearCopyTouch(this, store.state, container.captureCommands)
+        overlay = touch
+        if (!touch.show()) {
+            // Without the button a recording cannot be stopped; never a false Ready.
+            log("overlay could not be shown at session start")
+            teardown(TeardownReason.PermissionLost)
+            return START_NOT_STICKY
+        }
+        watchOverlayPermission()
         log("session started")
         return START_NOT_STICKY
     }
@@ -128,9 +167,43 @@ class CaptureService : Service(), CaptureSessionHandle {
             scope = scope,
             clock = SystemClock::elapsedRealtime,
             log = ::log,
-            onLost = { teardown(TeardownReason.Internal) },
+            onLost = { teardown(TeardownReason.CaptureLost) },
         ).also { it.start() }
         return true
+    }
+
+    /**
+     * Revoking the overlay permission is an app-op change: the process lives
+     * and the window manager only hides the button, so the session would
+     * keep capturing with no way to stop a recording.
+     */
+    private fun watchOverlayPermission() {
+        // Binder thread. Also fires for other packages and when the
+        // permission is granted, so it only schedules a re-check on main.
+        val listener = AppOpsManager.OnOpChangedListener { _, _ -> mainHandler.post(::recheckOverlayPermission) }
+        getSystemService(AppOpsManager::class.java)
+            .startWatchingMode(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, packageName, listener)
+        overlayWatcher = listener
+    }
+
+    private fun stopWatchingOverlayPermission() {
+        val listener = overlayWatcher ?: return
+        overlayWatcher = null
+        getSystemService(AppOpsManager::class.java).stopWatchingMode(listener)
+    }
+
+    private fun recheckOverlayPermission() {
+        if (stopping || projection == null) return
+        // The check the main screen uses; the raw op mode can be MODE_DEFAULT.
+        if (Settings.canDrawOverlays(this)) return
+        log("overlay permission revoked")
+        teardown(TeardownReason.PermissionLost)
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        log("onTaskRemoved")
+        teardown(TeardownReason.UserEnded)
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onTap() {
@@ -191,20 +264,24 @@ class CaptureService : Service(), CaptureSessionHandle {
     }
 
     /**
-     * Ends the session (Cap 1 design 3.6). Phase 1.3 skeleton: the
-     * authorisation-lost alert and the Recents path are added in phase 1.6.
+     * Ends the session. Main thread only: a callback or re-check posted
+     * meanwhile runs after it and stops at [stopping].
      */
     private fun teardown(reason: TeardownReason) {
         if (stopping) return
         stopping = true
-        log("teardown reason=$reason")
+        log("teardown reason=$reason alert=${reason.postsAlert} at=${SystemClock.elapsedRealtime()}")
+        stopWatchingOverlayPermission()
         overlay?.hide()
         overlay = null
+        log("teardown: overlay hidden at=${SystemClock.elapsedRealtime()}")
         // The reader deletes the cancelled clip's temp file when it detaches it.
         session?.cancel()
         session = null
         loop?.close()
         loop = null
+        // Own notification id, so removing the foreground notification keeps it.
+        if (reason.postsAlert) container.notifications.postAuthorisationLostAlert()
         projection?.let {
             it.unregisterCallback(projectionCallback)
             it.stop()
@@ -213,10 +290,14 @@ class CaptureService : Service(), CaptureSessionHandle {
         store.dispatch(CaptureEvent.SessionEnded)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+        log("teardown done at=${SystemClock.elapsedRealtime()}")
     }
 
     override fun onDestroy() {
         teardown(TeardownReason.Internal)
+        // No-ops after a teardown; kept so nothing outlives the instance.
+        stopWatchingOverlayPermission()
+        mainHandler.removeCallbacksAndMessages(null)
         if (container.sessionHandle === this) container.sessionHandle = null
         scope.cancel()
         super.onDestroy()

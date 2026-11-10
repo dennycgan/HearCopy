@@ -238,14 +238,22 @@ class CaptureLoop(
 
     /** Skipped once release has started; serialised with [releaseSource]. */
     private fun stopSource() {
-        synchronized(sourceLock) {
-            val active = source ?: return
-            if (sourceReleased) return
-            try {
-                active.stop()
-            } catch (e: Exception) {
-                log("source stop failed: ${e.javaClass.simpleName}")
+        // Timed from before the lock: waiting for it is part of the cost.
+        val startMs = clock()
+        log("source stop start at=$startMs")
+        try {
+            synchronized(sourceLock) {
+                val active = source ?: return
+                if (sourceReleased) return
+                try {
+                    active.stop()
+                } catch (e: Exception) {
+                    log("source stop failed: ${e.javaClass.simpleName}")
+                }
             }
+        } finally {
+            val endMs = clock()
+            log("source stop end at=$endMs took=${endMs - startMs} ms")
         }
     }
 

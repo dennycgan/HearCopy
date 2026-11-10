@@ -3,6 +3,7 @@ package com.dennycgan.hearcopy.capture
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import com.dennycgan.hearcopy.notify.CaptureNotifications
 import com.dennycgan.hearcopy.state.CaptureEvent
 import com.dennycgan.hearcopy.state.CaptureStateStore
 
@@ -14,8 +15,12 @@ import com.dennycgan.hearcopy.state.CaptureStateStore
 class CaptureCommands(
     private val context: Context,
     private val store: CaptureStateStore,
+    private val notifications: CaptureNotifications,
     private val handle: () -> CaptureSessionHandle?,
 ) {
+
+    /** Whether the main screen was opened from the authorisation-lost alert. */
+    fun isAlertIntent(intent: Intent?): Boolean = notifications.isAlertIntent(intent)
 
     /** The system dialog that asks for capture consent. */
     fun consentIntent(context: Context): Intent =

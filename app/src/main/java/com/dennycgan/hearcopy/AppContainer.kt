@@ -34,5 +34,5 @@ class AppContainer(context: Context) {
     /** The running capture service; main thread only. */
     var sessionHandle: CaptureSessionHandle? = null
 
-    val captureCommands = CaptureCommands(appContext, store) { sessionHandle }
+    val captureCommands = CaptureCommands(appContext, store, notifications) { sessionHandle }
 }
