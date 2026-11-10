@@ -354,3 +354,36 @@ native rates.
 - Debuggable installs hold up to three clips of captured audio in
   app-private, no-backup storage.
 - Release builds behave as the product spec says.
+
+## ADR-010: Clips shorter than one second are discarded
+> A recording stopped less than 1.0 s after its first audio, on the overlay timer's clock, is discarded without an upload and the button returns to Ready.
+- Status: Accepted (2026-11-10)
+- Anchor: 6b38170
+### Context
+- In Cap 1 phase 1.5, deliberate rapid tapping produced clips of about
+  0.1-0.3 s, and every one was saved. From Cap 2 on, each saved clip is
+  uploaded and billed; the billing granularity is not documented.
+- The user sees the overlay timer. A stop while it still shows 00:00 is
+  an accidental double tap, not a request.
+### Decision
+- MIN_CLIP_MS = 1000 in state/. TapStop carries the stop time, stamped
+  with elapsedRealtime on the main thread at the tap; reduce compares it
+  with Recording.startedAtMs (first audio). Below the minimum:
+  Recording -> Ready, no Failed state, attempt unchanged. Otherwise
+  Processing.
+- The session completes with CaptureResult.TooShort and the reader
+  deletes the clip when it detaches it. No upload, no notification, no
+  feedback; the previous transcript is untouched; debug retention does
+  not keep it.
+- The 300 s limit is not subject to the minimum.
+- Rejected: the sample count as the measure (it lags the clock by a
+  partial read and can drop a clip that already showed 00:01); the
+  reader's detach as the stop time (up to about 100 ms after the tap); a
+  Failed state or a notification for a discarded clip.
+### Consequences
+- The timer ticks on whole seconds, so it can show 00:00 for a few ms
+  after 1000 ms; such a clip is kept. Accepted.
+- An intended clip shorter than 1 s is lost; the constant can be tuned
+  on Device-A.
+- Device-A at the anchor: discards at 108, 238 and 137 ms; kept clips of
+  3.9 s and 6.5 s by WAV length.

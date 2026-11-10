@@ -7,16 +7,7 @@ details live in DECISIONS.md.
 
 - [x] Cap 0 Foundation
 - [x] Cap 1 Capture session + hearcopyTouch
-- [ ] Cap 2 Transcription loop  <- YOU ARE HERE
-  - Decide where the API key comes from before Cap 2 design (settings
-    page is Cap 3).
-  - Minimum clip length 1.0 s, measured on the overlay timer clock
-    (elapsedRealtime at the stop minus first audio): stopped while the
-    timer shows 00:00 -> clip deleted, no upload, previous transcript
-    kept, no Failed state, back to Ready. Worth an ADR at the Cap 2 work
-    commit.
-  - Verify the Processing reject haptic on Device-A (Cap 1 D1); the
-    system touch-vibration setting must be on.
+- [~] Cap 2 Transcription loop  <- YOU ARE HERE
 - [ ] Cap 3 Main UI, settings and lifecycle completion
   - Persist the hearcopyTouch position (DataStore, data/). The overlay
     reads and writes it only through state/ and CaptureCommands (Rule 4),
@@ -35,7 +26,17 @@ details live in DECISIONS.md.
 
 ## Phase Roadmap (Cap 2 Transcription loop)
 
-- Not scoped yet: Cap 2 phases await the owner's approved scope.
+- [x] 2.1 Minimum clip length: TapStop stop time, discard below 1.0 s
+  without upload (ADR-010) (6b38170)
+- [ ] 2.2 Transcription client: OkHttp request, JSON parsing, error
+  mapping, no silent retry, key hygiene; JVM tests only
+- [ ] 2.3 API key: Keystore AES-GCM storage in DataStore, temporary key
+  field, key as a start condition, KeyRemoved / KeyUnreadable
+- [ ] 2.4 Transcription loop on Device-A (first real-key phase): upload
+  after save, Completed, transcript persistence and display,
+  notification, Processing haptic
+- [ ] 2.5 Lifecycle with a transcription in flight: SessionLost,
+  deferred stop, Recents cancel, consent after the deferred stop
 
 ## Known debt
 
