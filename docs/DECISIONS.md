@@ -211,3 +211,48 @@ native rates.
   backlog at most 15 ms).
 - A clip may run up to one chunk (about 100 ms) past the stop tap.
 - The escape hatch "pre-create AudioRecord on Ready" is obsolete.
+
+## ADR-006: hearcopyTouch keeps its place on the glass
+> The floating button's position is stored in panel coordinates and mapped through the display rotation, so it stays at the same point on the glass whatever the screen content does.
+- Status: Accepted (2026-11-10)
+- Anchor: 89a024a
+### Context
+- hearcopyTouch is dragged by the user and kept in memory for the session
+  (persistence is Cap 3). ADR-003 requires it to be clamped to the screen
+  on configuration changes, because other apps may run in landscape.
+- A first version kept one LayoutParams position (inset from the right
+  edge, offset from the top) for every orientation. On Device-A most
+  portrait positions collapsed onto the landscape bottom edge (three
+  positions all at the same y), which the owner rejected: the position
+  must be absolute, whatever the screen content does.
+- The overlay sits below the status and navigation bars, and how
+  LayoutParams map to the screen was not verified in advance.
+### Decision
+- The stored position is the button's top-left corner in panel
+  (natural-orientation) coordinates, mapped through the display rotation
+  (0/90/180/270) to the screen. The button stays at the same point on the
+  glass; a drag in any orientation updates that one panel position.
+- Split rule: a drag end stores the button's final resting position,
+  after clamp and overflow correction; that write is the user's choice. A
+  clamp after a configuration change moves only the applied position and
+  never writes back, so the position returns when the rotation does.
+- Clamp: on drag end, and after a configuration change once a requested
+  layout pass has run, clamp in LayoutParams space to the visible frame;
+  after the next layout, measure the window with getLocationOnScreen and
+  correct any real overflow once.
+- Rejected: one LayoutParams position for all orientations (the first
+  version); a position proportional to the screen (it moves on the glass
+  when the content rotates).
+### Consequences
+- Landscape is still not committed in V1 (ADR-003).
+- This amends ADR-003's consequence "rotation checks are removed from the
+  device checklists" to exactly one blocking device check: the overlay
+  clamp and position, in both landscape directions (Cap 1 phase 1.5
+  check 8). ADR-003 Status is unchanged.
+- Where the panel point falls under a cutout or a system bar in the
+  current rotation, the button is pushed inside the visible frame by up
+  to about the bar height and returns when the rotation does.
+- A system bar shown or hidden without a configuration change does not
+  trigger a clamp; not observed as a problem on Device-A.
+- Panel size comes from Display.getRealSize, deprecated from API 31 but
+  still used for all levels; revisit if it misreports on Device-B.

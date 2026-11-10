@@ -13,7 +13,15 @@ details live in DECISIONS.md.
 - [ ] Cap 2 Transcription loop
   - Decide where the API key comes from before Cap 2 design (settings
     page is Cap 3).
+  - Decide how to handle very short clips from accidental double taps: a
+    second tap just after the button turns red stops the recording, and
+    each such clip would be uploaded and billed.
+  - Verify the Processing reject haptic on Device-A (Cap 1 D1); the
+    system touch-vibration setting must be on.
 - [ ] Cap 3 Main UI, settings and lifecycle completion
+  - Persist the hearcopyTouch position (DataStore, data/). The overlay
+    reads and writes it only through state/ and CaptureCommands (Rule 4),
+    never overlay -> data/.
 - [ ] V1 release
   - Includes Device-B (Android 11) full flow.
   - App icon (clears lint MissingApplicationIcon; icon vectors must use
@@ -40,8 +48,10 @@ details live in DECISIONS.md.
 - [x] 1.4 Capture start without speaker dropout: continuous capture
   during a session (ADR-005), CaptureLoop, per-attempt clip at chunk
   boundaries, source skip, restart budget; JVM tests (79fcc26)
-- [ ] 1.5 hearcopyTouch complete: drag, timer, progress ring, Preparing
-  ignore, Processing haptic, in-memory position
+- [x] 1.5 hearcopyTouch complete: drag with touch slop, Recording timer,
+  Processing ring and haptic, Preparing taps ignored, translucency by
+  status, in-memory position in panel coordinates with clamp (ADR-006)
+  (89a024a)
 - [ ] 1.6 Lifecycle rules: back to background, Recents teardown, reopen
   reuse or re-request, authorisation lost (hide, alert, stop), single main
   screen instance, no duplicate button
