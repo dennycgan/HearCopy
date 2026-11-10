@@ -33,5 +33,10 @@
     <string name="notification_session_text">Tap the floating button to capture audio.</string>
 
     <!-- hearcopyTouch -->
-    <string name="touch_description">HearCopy capture button</string>
+    <string name="touch_timer">%1$02d:%2$02d</string>
+    <string name="touch_description_ready">Start capturing audio</string>
+    <string name="touch_description_preparing">Starting audio capture</string>
+    <string name="touch_description_recording">Stop capturing audio</string>
+    <string name="touch_description_processing">Saving the clip</string>
+    <string name="touch_description_failed">Capture failed. Tap to try again.</string>
 </resources>

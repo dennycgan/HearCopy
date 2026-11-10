@@ -138,7 +138,8 @@ class CaptureService : Service(), CaptureSessionHandle {
         when (tapAction(store.state.value.status)) {
             TapAction.Start -> startCapture()
             TapAction.Stop -> session?.stop()
-            TapAction.Ignore, TapAction.Reject -> Unit
+            TapAction.Ignore -> log("tap ignored: Preparing")
+            TapAction.Reject -> Unit
         }
     }
 
@@ -191,7 +192,7 @@ class CaptureService : Service(), CaptureSessionHandle {
 
     /**
      * Ends the session (Cap 1 design 3.6). Phase 1.3 skeleton: the
-     * authorisation-lost alert and the Recents path are added in phase 1.5.
+     * authorisation-lost alert and the Recents path are added in phase 1.6.
      */
     private fun teardown(reason: TeardownReason) {
         if (stopping) return
