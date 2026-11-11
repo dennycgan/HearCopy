@@ -7,6 +7,9 @@ sealed interface CaptureEvent {
         val recordAudioGranted: Boolean,
     ) : CaptureEvent
 
+    /** Whether an API key is stored. Sets only apiKeyPresent. */
+    data class ApiKeyReported(val present: Boolean) : CaptureEvent
+
     /** The service holds a valid capture consent. Sets only projectionActive. */
     data object SessionStarted : CaptureEvent
 

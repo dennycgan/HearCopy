@@ -21,6 +21,8 @@ data class Setup(
     val overlayGranted: Boolean = false,
     val recordAudioGranted: Boolean = false,
     val projectionActive: Boolean = false,
+    /** Whether an API key is stored; null until storage has been read. */
+    val apiKeyPresent: Boolean? = null,
 )
 
 sealed interface CaptureStatus {

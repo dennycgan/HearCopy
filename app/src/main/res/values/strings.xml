@@ -4,6 +4,7 @@
 
     <!-- Temporary main screen -->
     <string name="setup_title">Set up HearCopy</string>
+    <string name="setup_api_key">OpenAI API key</string>
     <string name="setup_overlay">Display over other apps</string>
     <string name="setup_microphone">Microphone</string>
     <string name="setup_capture">Audio capture</string>
@@ -13,6 +14,14 @@
     <string name="action_overlay">Allow display over other apps</string>
     <string name="action_microphone">Allow microphone</string>
     <string name="action_capture">Allow audio capture</string>
+
+    <string name="api_key_label">API key</string>
+    <string name="api_key_saved">Saved key ending in %1$s</string>
+    <string name="api_key_invalid">Enter a key made of letters, digits and symbols, with no spaces.</string>
+    <string name="api_key_save_failed">The key could not be saved. Try again.</string>
+    <string name="api_key_delete_failed">The key could not be deleted. Try again.</string>
+    <string name="action_save_key">Save key</string>
+    <string name="action_delete_key">Delete key</string>
 
     <string name="status_setup">Complete the steps above to start.</string>
     <string name="status_declined">A step was not allowed. Use the button to try again.</string>

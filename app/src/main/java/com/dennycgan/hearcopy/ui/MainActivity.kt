@@ -17,7 +17,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import com.dennycgan.hearcopy.HearCopyApplication
+import com.dennycgan.hearcopy.capture.CaptureCommands.KeyDeleteResult
+import com.dennycgan.hearcopy.capture.CaptureCommands.KeySaveResult
 import com.dennycgan.hearcopy.ui.theme.HearCopyTheme
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -25,7 +28,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Temporary main screen (replaced in Cap 3). Walks the setup steps in order
- * on every resume: overlay permission, microphone, capture consent. A
+ * on every resume: API key (typed here; nothing to open), overlay
+ * permission, microphone, capture consent. A
  * refused step sets [declined], which stops auto-advance until the action
  * button is used. Single instance (`launchMode="singleTask"`).
  */
@@ -56,6 +60,23 @@ class MainActivity : ComponentActivity() {
      */
     private var inFlight = false
     private var notificationsAsked = false
+
+    /**
+     * The key being typed. In memory only, never in saved instance state:
+     * a saved Bundle can be written to disk by the system (ADR-013).
+     */
+    private var keyInput by mutableStateOf("")
+    private var keyHint by mutableStateOf<String?>(null)
+    private var keyMessage by mutableStateOf<KeyMessage?>(null)
+    private var keyBusy by mutableStateOf(false)
+
+    /**
+     * apiKeyPresent as last seen by advance() or the state collector. The
+     * collector advances only on a key that appeared after that, so a key
+     * read between onResume and the collector's start is not missed, and
+     * one that advance() already saw does not advance twice.
+     */
+    private var keySeenPresent = false
 
     /** Lives from onCreate to onDestroy, so it also runs while in the background. */
     private val uiScope = MainScope()
@@ -104,9 +125,21 @@ class MainActivity : ComponentActivity() {
         // the background. Clearing only on resume missed a session that
         // ended before the next resume: the guard stayed set, the status
         // line stayed on "Starting" and consent was never asked again.
+        //
+        // A key that becomes present while this screen is resumed (read at
+        // start, or saved) continues the setup once per transition, through
+        // advance(), so a declined step is still not asked again. A
+        // transition while not resumed is picked up by the next onResume.
         uiScope.launch {
-            container.store.state.collect { if (it.setup.projectionActive) awaitingSession = false }
+            container.store.state.collect {
+                if (it.setup.projectionActive) awaitingSession = false
+                val keyPresent = it.setup.apiKeyPresent == true
+                val becamePresent = keyPresent && !keySeenPresent
+                keySeenPresent = keyPresent
+                if (becamePresent && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) advance()
+            }
         }
+        uiScope.launch { keyHint = container.captureCommands.refreshApiKey() }
         setContent {
             val state by container.store.state.collectAsState()
             HearCopyTheme {
@@ -115,6 +148,15 @@ class MainActivity : ComponentActivity() {
                     nextStep = nextStep(state.setup),
                     declined = declined,
                     awaitingSession = awaitingSession && !state.setup.projectionActive,
+                    apiKey = ApiKeyUi(
+                        input = keyInput,
+                        hint = keyHint,
+                        message = keyMessage,
+                        busy = keyBusy,
+                        onInput = { keyInput = it },
+                        onSave = ::saveKey,
+                        onDelete = ::deleteKey,
+                    ),
                     onAction = ::onActionButton,
                 )
             }
@@ -151,6 +193,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun advance() {
+        keySeenPresent = container.store.state.value.setup.apiKeyPresent == true
         if (container.store.state.value.setup.projectionActive) awaitingSession = false
         if (declined || inFlight) return
         if (shouldAskNotifications()) {
@@ -162,6 +205,38 @@ class MainActivity : ComponentActivity() {
         val step = nextStep(container.store.state.value.setup)
         if (step == SetupStep.Consent && awaitingSession) return
         launch(step)
+    }
+
+    private fun saveKey() {
+        if (keyBusy) return
+        keyBusy = true
+        uiScope.launch {
+            when (val result = container.captureCommands.saveApiKey(keyInput)) {
+                is KeySaveResult.Saved -> {
+                    keyInput = ""
+                    keyHint = result.hint
+                    keyMessage = null
+                }
+                KeySaveResult.Invalid -> keyMessage = KeyMessage.Invalid
+                KeySaveResult.Failed -> keyMessage = KeyMessage.SaveFailed
+            }
+            keyBusy = false
+        }
+    }
+
+    private fun deleteKey() {
+        if (keyBusy) return
+        keyBusy = true
+        uiScope.launch {
+            when (container.captureCommands.deleteApiKey()) {
+                KeyDeleteResult.Deleted -> {
+                    keyHint = null
+                    keyMessage = null
+                }
+                KeyDeleteResult.Failed -> keyMessage = KeyMessage.DeleteFailed
+            }
+            keyBusy = false
+        }
     }
 
     /** The action button: retries the next step and clears [declined]. */
@@ -191,7 +266,8 @@ class MainActivity : ComponentActivity() {
                 inFlight = true
                 consentLauncher.launch(container.captureCommands.consentIntent(this))
             }
-            SetupStep.Done -> Unit
+            // Nothing to open: storage is still being read, or the key field is next.
+            SetupStep.Checking, SetupStep.ApiKey, SetupStep.Done -> Unit
         }
     }
 

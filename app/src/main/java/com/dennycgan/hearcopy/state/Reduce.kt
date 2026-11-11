@@ -1,5 +1,6 @@
 package com.dennycgan.hearcopy.state
 
+import com.dennycgan.hearcopy.state.CaptureEvent.ApiKeyReported
 import com.dennycgan.hearcopy.state.CaptureEvent.CaptureFailed
 import com.dennycgan.hearcopy.state.CaptureEvent.CaptureSaved
 import com.dennycgan.hearcopy.state.CaptureEvent.FirstAudio
@@ -34,6 +35,10 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
             recordAudioGranted = event.recordAudioGranted,
         ),
     )
+
+    // Status and attempt are untouched: deleting the key ends the session
+    // through the service's teardown, which reports SessionEnded.
+    is ApiKeyReported -> state.copy(setup = state.setup.copy(apiKeyPresent = event.present))
 
     SessionStarted -> state.copy(setup = state.setup.copy(projectionActive = true))
 

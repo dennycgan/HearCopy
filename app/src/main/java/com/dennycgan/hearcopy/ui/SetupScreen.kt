@@ -7,13 +7,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dennycgan.hearcopy.R
 import com.dennycgan.hearcopy.state.CaptureState
@@ -21,24 +26,47 @@ import com.dennycgan.hearcopy.state.CaptureStatus
 import com.dennycgan.hearcopy.state.FailureReason
 import com.dennycgan.hearcopy.state.Setup
 
-/** Setup steps in auto-advance order. */
-enum class SetupStep { Overlay, Microphone, Consent, Done }
+/**
+ * Setup steps in auto-advance order. [Checking] and [ApiKey] open no
+ * system screen: the first waits for storage, the second for the key field.
+ */
+enum class SetupStep { Checking, ApiKey, Overlay, Microphone, Consent, Done }
 
-/** The next missing step, from the reported setup facts. */
+/** The next missing step, from the reported setup facts. The key comes first. */
 fun nextStep(setup: Setup): SetupStep = when {
+    setup.apiKeyPresent == null -> SetupStep.Checking
+    setup.apiKeyPresent == false -> SetupStep.ApiKey
     !setup.overlayGranted -> SetupStep.Overlay
     !setup.recordAudioGranted -> SetupStep.Microphone
     !setup.projectionActive -> SetupStep.Consent
     else -> SetupStep.Done
 }
 
-/** Three setup rows, one action button for the next missing step, one status line. */
+/** The outcome of the last key save or delete, shown under the key field. */
+enum class KeyMessage { Invalid, SaveFailed, DeleteFailed }
+
+/**
+ * The temporary key field (replaced in Cap 3). [input] is held in memory
+ * only and never written to saved instance state.
+ */
+class ApiKeyUi(
+    val input: String,
+    val hint: String?,
+    val message: KeyMessage?,
+    val busy: Boolean,
+    val onInput: (String) -> Unit,
+    val onSave: () -> Unit,
+    val onDelete: () -> Unit,
+)
+
+/** Four setup rows, the key field, one action button for the next missing step, one status line. */
 @Composable
 fun SetupScreen(
     state: CaptureState,
     nextStep: SetupStep,
     declined: Boolean,
     awaitingSession: Boolean,
+    apiKey: ApiKeyUi,
     onAction: () -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -47,6 +75,10 @@ fun SetupScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(text = stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
+            SetupRow(R.string.setup_api_key, state.setup.apiKeyPresent)
+            // Hidden until storage has been read, so a stored key never
+            // flashes as missing.
+            state.setup.apiKeyPresent?.let { present -> ApiKeySection(apiKey, present) }
             SetupRow(R.string.setup_overlay, state.setup.overlayGranted)
             SetupRow(R.string.setup_microphone, state.setup.recordAudioGranted)
             SetupRow(R.string.setup_capture, state.setup.projectionActive)
@@ -55,9 +87,9 @@ fun SetupScreen(
             }
             // Never hidden while a session is starting: if the service fails,
             // this button is the way out.
-            if (nextStep != SetupStep.Done) {
+            actionLabel(nextStep)?.let { label ->
                 Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = stringResource(actionLabel(nextStep)))
+                    Text(text = stringResource(label))
                 }
             }
             Text(
@@ -69,21 +101,67 @@ fun SetupScreen(
 }
 
 @Composable
-private fun SetupRow(@StringRes label: Int, done: Boolean) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(text = stringResource(label), style = MaterialTheme.typography.bodyLarge)
+private fun ApiKeySection(apiKey: ApiKeyUi, present: Boolean) {
+    if (present && apiKey.hint != null) {
+        Text(text = stringResource(R.string.api_key_saved, apiKey.hint), style = MaterialTheme.typography.bodyMedium)
+    }
+    OutlinedTextField(
+        value = apiKey.input,
+        onValueChange = apiKey.onInput,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !apiKey.busy,
+        label = { Text(text = stringResource(R.string.api_key_label)) },
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        singleLine = true,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = apiKey.onSave, enabled = !apiKey.busy) {
+            Text(text = stringResource(R.string.action_save_key))
+        }
+        if (present) {
+            OutlinedButton(onClick = apiKey.onDelete, enabled = !apiKey.busy) {
+                Text(text = stringResource(R.string.action_delete_key))
+            }
+        }
+    }
+    apiKey.message?.let { message ->
         Text(
-            text = stringResource(if (done) R.string.setup_done else R.string.setup_needed),
-            style = MaterialTheme.typography.bodyLarge,
+            text = stringResource(keyMessage(message)),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
         )
     }
 }
 
+/** [done] null: not known yet, nothing shown. */
+@Composable
+private fun SetupRow(@StringRes label: Int, done: Boolean?) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(text = stringResource(label), style = MaterialTheme.typography.bodyLarge)
+        if (done != null) {
+            Text(
+                text = stringResource(if (done) R.string.setup_done else R.string.setup_needed),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+    }
+}
+
+/** Null for the steps without an action button (and Done). */
 @StringRes
-private fun actionLabel(step: SetupStep): Int = when (step) {
+private fun actionLabel(step: SetupStep): Int? = when (step) {
     SetupStep.Overlay -> R.string.action_overlay
     SetupStep.Microphone -> R.string.action_microphone
-    SetupStep.Consent, SetupStep.Done -> R.string.action_capture
+    SetupStep.Consent -> R.string.action_capture
+    SetupStep.Checking, SetupStep.ApiKey, SetupStep.Done -> null
+}
+
+@StringRes
+private fun keyMessage(message: KeyMessage): Int = when (message) {
+    KeyMessage.Invalid -> R.string.api_key_invalid
+    KeyMessage.SaveFailed -> R.string.api_key_save_failed
+    KeyMessage.DeleteFailed -> R.string.api_key_delete_failed
 }
 
 @StringRes

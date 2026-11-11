@@ -6,4 +6,7 @@ package com.dennycgan.hearcopy.capture
  */
 interface CaptureSessionHandle {
     fun onTap()
+
+    /** The API key was deleted: end the session without an alert. */
+    fun endForKeyRemoved()
 }

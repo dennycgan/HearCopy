@@ -7,8 +7,12 @@ import com.dennycgan.hearcopy.capture.CaptureCommands
 import com.dennycgan.hearcopy.capture.CaptureFiles
 import com.dennycgan.hearcopy.capture.CaptureSessionHandle
 import com.dennycgan.hearcopy.capture.PlaybackCaptureSource
+import com.dennycgan.hearcopy.data.SettingsRepository
 import com.dennycgan.hearcopy.notify.CaptureNotifications
 import com.dennycgan.hearcopy.state.CaptureStateStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Hand-written dependency container. Concrete implementations are
@@ -34,5 +38,11 @@ class AppContainer(context: Context) {
     /** The running capture service; main thread only. */
     var sessionHandle: CaptureSessionHandle? = null
 
-    val captureCommands = CaptureCommands(appContext, store, notifications) { sessionHandle }
+    /** Application-wide work on the main thread that must outlive a screen (key save and delete). */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /** The stored API key (ADR-013); one instance per process, as DataStore requires. */
+    private val settings = SettingsRepository(appContext)
+
+    val captureCommands = CaptureCommands(appContext, store, notifications, settings, appScope) { sessionHandle }
 }

@@ -14,6 +14,7 @@ class TeardownReasonTest {
             TeardownReason.PermissionLost to true,
             TeardownReason.CaptureLost to true,
             TeardownReason.Internal to false,
+            TeardownReason.KeyRemoved to false,
         )
         assertEquals(TeardownReason.entries.toSet(), expected.keys)
         expected.forEach { (reason, alert) -> assertEquals("for $reason", alert, reason.postsAlert) }

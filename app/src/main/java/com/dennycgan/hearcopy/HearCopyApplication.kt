@@ -13,5 +13,6 @@ class HearCopyApplication : Application() {
         // Synchronous, before any recording can start in this process.
         container.captureFiles.clearTemp()
         container.notifications.createChannels()
+        container.captureCommands.loadApiKeyStatus()
     }
 }

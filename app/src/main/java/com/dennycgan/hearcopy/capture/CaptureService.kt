@@ -57,6 +57,9 @@ class CaptureService : Service(), CaptureSessionHandle {
 
         /** Our own safety net, or a rejected consent result with HearCopy in front. */
         Internal(false),
+
+        /** The user deleted the API key on the main screen. */
+        KeyRemoved(false),
     }
 
     private val container by lazy { (application as HearCopyApplication).container }
@@ -214,6 +217,10 @@ class CaptureService : Service(), CaptureSessionHandle {
             TapAction.Ignore -> log("tap ignored: Preparing")
             TapAction.Reject -> Unit
         }
+    }
+
+    override fun endForKeyRemoved() {
+        teardown(TeardownReason.KeyRemoved)
     }
 
     private fun startCapture() {

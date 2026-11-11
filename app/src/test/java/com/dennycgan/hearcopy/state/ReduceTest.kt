@@ -1,5 +1,6 @@
 package com.dennycgan.hearcopy.state
 
+import com.dennycgan.hearcopy.state.CaptureEvent.ApiKeyReported
 import com.dennycgan.hearcopy.state.CaptureEvent.CaptureFailed
 import com.dennycgan.hearcopy.state.CaptureEvent.CaptureSaved
 import com.dennycgan.hearcopy.state.CaptureEvent.FirstAudio
@@ -270,6 +271,35 @@ class ReduceTest {
         val retry = reduce(timedOut, TapStart)
         assertSame(retry, reduce(retry, PreparingTimedOut(1)))
         assertEquals(state(Preparing, attempt = 2), retry)
+    }
+
+    // API key
+
+    @Test
+    fun `the API key is unknown until storage has been read`() {
+        assertEquals(null, CaptureState().setup.apiKeyPresent)
+    }
+
+    @Test
+    fun `ApiKeyReported sets only apiKeyPresent, in every status`() {
+        for (status in allStatuses) {
+            for (present in listOf(true, false)) {
+                val before = state(status, attempt = 3)
+                val after = reduce(before, ApiKeyReported(present))
+                assertEquals("$status $present", before.copy(setup = session.copy(apiKeyPresent = present)), after)
+            }
+        }
+    }
+
+    @Test
+    fun `no other setup event changes apiKeyPresent`() {
+        for (present in listOf(null, true, false)) {
+            val setup = session.copy(apiKeyPresent = present)
+            val events = listOf(PermissionsReported(false, false), SessionStarted, SessionEnded)
+            for (event in events) {
+                assertEquals("$event", present, reduce(state(Ready, setup = setup), event).setup.apiKeyPresent)
+            }
+        }
     }
 
     // Full flows
