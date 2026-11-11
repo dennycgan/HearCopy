@@ -33,9 +33,10 @@ details live in DECISIONS.md.
   ADR-012) (b9517a2)
 - [x] 2.3 API key: Keystore AES-GCM storage in DataStore, temporary key
   field, key as a start condition, KeyRemoved (ADR-013) (e566261)
-- [ ] 2.4 Transcription loop on Device-A (first real-key phase): upload
+- [x] 2.4 Transcription loop on Device-A (first real-key phase): upload
   after save, Completed, transcript persistence and display,
   notification, Processing haptic, KeyUnreadable teardown and alert
+  (ADR-014) (13d6de4)
 - [ ] 2.5 Lifecycle with a transcription in flight: SessionLost,
   deferred stop, Recents cancel, consent after the deferred stop
 
@@ -47,3 +48,4 @@ details live in DECISIONS.md.
 | D-002 | Open | 0 | Lint `ObsoleteLintCustomCheck`: lifecycle library lint checks are skipped under AGP 9.5 lint | Third-party lint jar uses an API that this lint version no longer has; affects `RepeatOnLifecycleWrongUsage` and `UnsafeLifecycleWhenUsage` | Cap 3 (re-check when lifecycle-runtime-compose is added) |
 | D-003 | Accepted | 0 | Lint `NewerVersionAvailable` for every catalog library it reports (Konsist, kotlinx-coroutines-android, kotlinx-coroutines-test; first seen: Konsist 0.18.1) | Dependency versions are upgraded deliberately as planned work, not on lint prompts; 0.18.0 matches Kotlin 2.4.21 exactly | - |
 | D-004 | Accepted | 1 | Lint LockedOrientationActivity and DiscouragedApi on MainActivity screenOrientation | ADR-003 | - |
+| D-005 | Accepted | 2 | The KeyUnreadable alert can be silent: the transcript notification posted just before it uses up Android's per-app sound rate limit | ADR-014; the banner still shows | - |

@@ -535,3 +535,105 @@ native rates.
 - The hint is 4 plaintext characters, the whole key for a key of 4
   characters or fewer; accepted.
 - No protection on a rooted or compromised device.
+
+## ADR-014: Transcription loop
+> A saved clip is uploaded once over a fresh connection with the key decrypted just before, the transcript is stored before it is shown, and each clip gets one notification that is updated in place.
+- Status: Accepted (2026-11-11)
+- Anchor: 13d6de4
+### Context
+- Phases 2.1-2.3 added the minimum clip (ADR-010), the client (ADR-011,
+  ADR-012) and the encrypted key (ADR-013); CaptureSaved still returned
+  Processing to Ready.
+- The product spec keeps the last transcript across failures and
+  restarts, uses one notification per clip updated in place, and rejects
+  taps while transcribing.
+- withContext(NonCancellable) rethrows a pending cancellation on return,
+  and a teardown bumps the attempt. A DataStore read error reads as no key
+  (ADR-013), so a missing key at upload time is not a deleted key.
+- Device-A, during the phase 2.4 check: OkHttp keeps an idle connection
+  for 5 minutes by default. An upload that reused a connection idle for
+  4 min 27 s succeeded; one that reused a connection idle for 4 min 58.7 s
+  failed with Network after 11 ms while Wi-Fi stayed connected. With no
+  retry (ADR-012) the 130 s clip was lost.
+### Decision
+- state/: Completed (a tap starts a new recording). CaptureSaved leaves
+  Processing. TranscriptReady sets lastTranscript for any attempt and
+  moves only its own attempt from Processing to Completed.
+  TranscriptionFailed moves its attempt from Processing to Failed(reason).
+  TranscriptRestored sets lastTranscript only when it is null. New
+  FailureReasons: NoSpeech, Unauthorized, Forbidden, RateLimited,
+  QuotaExceeded, Timeout, Network, Server, Rejected, Malformed, TooLarge,
+  KeyUnavailable. CaptureState, TranscriptReady and TranscriptRestored
+  print no transcript text.
+- capture/: after a saved clip, post the notification, decrypt the key,
+  upload once. Unreadable: key reported absent, transcript notification
+  cancelled, then teardown KeyUnreadable with the ADR-007 alert. Absent or
+  Unavailable: Failed(KeyUnavailable), nothing deleted, apiKeyPresent
+  unchanged, session kept; the next upload reads the key again.
+- Commit point: one NonCancellable block writes the transcript on an IO
+  dispatcher, then dispatches TranscriptReady on the main thread. A
+  cancellation before it discards the result. A failed write still
+  dispatches and logs "save failed".
+- data/TranscriptRepository: own DataStore file
+  no_backup/datastore/transcript.preferences_pb; restored at process start.
+- Notification: alerts channel, own id, cancelled and posted again for each
+  clip so each clip shows one banner, then updated with setOnlyAlertOnce;
+  tap opens the main screen through its own PendingIntent request code.
+  Posted only for attempts that reached Processing (a stop tap or the
+  limit): uploads, and NoAudio or ReadError after the stop. None for clips
+  under the minimum, PreparingTimeout or a ReadError while recording.
+  Failure texts are fixed strings, the same as the main screen's status
+  line; never an HTTP code, server message or exception text.
+- Until phase 2.5, a teardown with an upload in flight cancels the upload
+  and the transcript notification for every reason.
+- This amends ADR-012: the client keeps no idle connection
+  (ConnectionPool with zero idle connections), so every upload opens a
+  fresh connection; one-shot body, no retry, no redirects and all
+  timeouts are unchanged. Network errors carry the exception class name
+  only (no message, key or body). ADR-012 Status is unchanged.
+- This amends ADR-009's retention rule: a clip whose upload was attempted
+  is kept in the debug rotation whatever the result; a clip whose upload
+  was cancelled or never started (including the pre-send key and size
+  checks) is deleted. Release builds delete every clip. ADR-009 Status is
+  unchanged.
+- Rejected: dispatching TranscriptReady after the NonCancellable block (a
+  pending cancellation skips it); gating lastTranscript on the attempt
+  (storage and screen disagree until the next start); refreshing key
+  presence after a failed read (a persistent read error would show the key
+  step during a live session); a shorter keep-alive instead of no reuse
+  (the server or network idle limit is unknown); retrying a failed upload
+  (ADR-012).
+### Consequences
+- A transcript written just before a teardown is shown and kept.
+- In 2.4, ProjectionLost, PermissionLost and CaptureLost during an upload
+  lose that result; 2.5 defers the stop.
+- A dismissed in-progress notification alerts again when it is updated.
+- A cancel after the body was sent may still be billed (ADR-012).
+- Every upload pays a new DNS, TCP and TLS setup. Device-A, one sample:
+  a 401 on a new connection took 1273 ms, on a reused one 1113 ms (about
+  160 ms, including DNS).
+- ADR-012's "a stale or shut-down connection surfaces as an error" now
+  covers only a connection that fails while in use.
+- A Network failure in the log now names the exception class, which the
+  stale-connection case lacked.
+- KeyUnreadable was triggered on Device-A only through a flipped GCM tag
+  byte, on a clip with sound (a silent clip fails as NoAudio before the
+  key is read): one alert, no upload, clip deleted. TooLarge is
+  unreachable under the 300 s cap (about 9.6 MB) and is covered by JVM
+  tests only.
+- The transcript is stored in plain text in no_backup, excluded from backup.
+- Device-A: a 242 s clip (7.7 MB) took 36.8 s from stop to result against
+  the 120 s call timeout; 6.5-19.6 s clips took 2.5-3.4 s.
+- The transcript notification is posted before the key read, so on the
+  Unreadable path Android's per-app sound rate limit mutes the alert
+  (Device-A: posted 170 ms after the transcript notification, "Muting
+  recently noisy"); the alert banner still shows and stays in the shade
+  until tapped or swiped away.
+- Device-A: deleting the key 2.8 s into the upload of a 138 s clip
+  cancelled it with no alert; the notification and the clip were removed
+  and the previous transcript stayed.
+- The Device-A re-check after an idle of at least 5 min 30 s cannot tell
+  the old client from the new one (OkHttp evicts an idle connection after
+  5 min) and did not cover the 4 min 27 s to 5 min window where the stale
+  reuse failed; the JVM test that every upload opens a fresh connection
+  and keeps none idle is the guarantee.
