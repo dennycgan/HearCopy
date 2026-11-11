@@ -387,3 +387,77 @@ native rates.
   on Device-A.
 - Device-A at the anchor: discards at 108, 238 and 137 ms; kept clips of
   3.9 s and 6.5 s by WAV length.
+
+## ADR-011: org.json:json for JVM tests only
+> JVM unit tests use the org.json:json artifact because Android's built-in org.json is a stub on the JVM; the app keeps the platform parser.
+- Status: Accepted (2026-11-11)
+- Anchor: b9517a2
+### Context
+- transcription/ parses the response with org.json, which Android ships
+  in the platform; the V1 allowlist (ADR-001) has no JSON library.
+- In local unit tests the android.jar org.json classes are stubs, so the
+  parser cannot run on the JVM.
+- The implementations differ: for a JSON null, Android's optString and
+  getString return the string "null", while org.json:json returns the
+  fallback or throws; org.json:json optString also turns non-string
+  values into strings.
+### Decision
+- org.json:json 20260814 (Public Domain) is added to the catalog and the
+  DependencyAllowlistTest allowlist, declared with testImplementation
+  only.
+- The client reads text, error.type and error.code only when
+  isNull(name) is false and opt(name) is a String, so both
+  implementations agree on null, missing and non-string values; tests
+  cover all three.
+- Rejected: a hand-written JSON reader in transcription/ (about 120
+  lines of own code to test and maintain); unitTests.isReturnDefaultValues
+  (returns defaults, does not parse).
+### Consequences
+- Tests run against a different org.json than the device; the platform
+  parser first runs on Device-A in phase 2.4.
+- The allowlist checks coordinates, not configurations; test-only is
+  held by review, as for the other test libraries. At the anchor,
+  org.json:json and mockwebserver3 are absent from
+  releaseRuntimeClasspath.
+
+## ADR-012: The transcription client sends each clip at most once
+> The OkHttp client never re-sends a clip on its own and bounds every call with a 120 s call timeout instead of read and write timeouts.
+- Status: Accepted (2026-11-11)
+- Anchor: b9517a2
+### Context
+- Every upload is billed. OkHttp 5.5.1 re-sends a request on 503 with
+  Retry-After: 0 (not gated by retryOnConnectionFailure), on 408, on 421
+  over a coalesced connection, on redirects, and after some connection
+  failures.
+- OkHttp defaults: connect, read and write 10 s, no call timeout. A long
+  clip can take more than 10 s between bytes while the server
+  transcribes.
+### Decision
+- The multipart body is wrapped in a RequestBody with isOneShot() =
+  true; retryOnConnectionFailure(false); followRedirects(false).
+- connect 15 s, read 0, write 0, call 120 s; the 120 s value is the
+  default inside transcription/.
+- enqueue, with call.cancel() on coroutine cancellation; cancellation is
+  rethrown, never mapped to an error. A failure on a cancelled call
+  whose coroutine is still active is the call timeout and maps to
+  Timeout, in onFailure and in the body read alike. A connect timeout
+  is Network.
+- The key is checked against the save rule (non-empty, every character
+  0x21-0x7E, no trim) before any request; a failure is InvalidKey with
+  nothing sent. OkHttp's header IllegalArgumentException is still
+  caught and mapped to InvalidKey; it is unreachable while the
+  pre-check exists.
+- Errors carry no exception message, response body or key.
+- Rejected: automatic retry with backoff (can double-bill an upload the
+  server already processed).
+### Consequences
+- Transient failures (a stale or shut-down connection, a single 503)
+  surface as errors; the user taps again.
+- A 3xx is Rejected, not followed.
+- Cancelling after the request body was sent does not stop the server;
+  that upload may still be billed.
+- okhttp-android merges INTERNET and an androidx.startup initializer
+  into the manifest from phase 2.2, and raises androidx.startup to 1.2.0
+  and androidx.annotation to 1.10.0; phase 2.4 declares INTERNET in the
+  app manifest.
+- The 120 s bound is checked against a 3-5 min clip on Device-A in 2.4.

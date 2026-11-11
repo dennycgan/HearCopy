@@ -28,8 +28,9 @@ details live in DECISIONS.md.
 
 - [x] 2.1 Minimum clip length: TapStop stop time, discard below 1.0 s
   without upload (ADR-010) (6b38170)
-- [ ] 2.2 Transcription client: OkHttp request, JSON parsing, error
-  mapping, no silent retry, key hygiene; JVM tests only
+- [x] 2.2 Transcription client: OkHttp request, JSON parsing, error
+  mapping, no silent retry, key hygiene; JVM tests only (ADR-011,
+  ADR-012) (b9517a2)
 - [ ] 2.3 API key: Keystore AES-GCM storage in DataStore, temporary key
   field, key as a start condition, KeyRemoved / KeyUnreadable
 - [ ] 2.4 Transcription loop on Device-A (first real-key phase): upload
