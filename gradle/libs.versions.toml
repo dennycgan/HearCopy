@@ -6,6 +6,8 @@ activityCompose = "1.13.0"
 junit = "4.13.2"
 konsist = "0.18.0"
 coroutines = "1.9.0"
+okhttp = "5.5.1"
+orgJson = "20260814"
 
 [libraries]
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -16,6 +18,9 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 konsist = { group = "com.lemonappdev", name = "konsist", version.ref = "konsist" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+mockwebserver3 = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

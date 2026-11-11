@@ -30,6 +30,8 @@ class DependencyAllowlistTest {
         "com.squareup.okhttp3:mockwebserver3",
         "androidx.datastore:datastore-preferences",
         "androidx.lifecycle:lifecycle-runtime-compose",
+        // Cap 2, test only (ADR-011): JVM stand-in for Android's built-in org.json
+        "org.json:json",
     )
 
     private val catalogPath = "gradle/libs.versions.toml"
