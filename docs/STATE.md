@@ -31,11 +31,11 @@ details live in DECISIONS.md.
 - [x] 2.2 Transcription client: OkHttp request, JSON parsing, error
   mapping, no silent retry, key hygiene; JVM tests only (ADR-011,
   ADR-012) (b9517a2)
-- [ ] 2.3 API key: Keystore AES-GCM storage in DataStore, temporary key
-  field, key as a start condition, KeyRemoved / KeyUnreadable
+- [x] 2.3 API key: Keystore AES-GCM storage in DataStore, temporary key
+  field, key as a start condition, KeyRemoved (ADR-013) (e566261)
 - [ ] 2.4 Transcription loop on Device-A (first real-key phase): upload
   after save, Completed, transcript persistence and display,
-  notification, Processing haptic
+  notification, Processing haptic, KeyUnreadable teardown and alert
 - [ ] 2.5 Lifecycle with a transcription in flight: SessionLost,
   deferred stop, Recents cancel, consent after the deferred stop
 

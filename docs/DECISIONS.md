@@ -461,3 +461,77 @@ native rates.
   and androidx.annotation to 1.10.0; phase 2.4 declares INTERNET in the
   app manifest.
 - The 120 s bound is checked against a 3-5 min clip on Device-A in 2.4.
+
+## ADR-013: API key encrypted with a Keystore AES-GCM key in DataStore
+> The OpenAI key is typed into the app, encrypted with a non-exportable Android Keystore AES-256-GCM key, stored as ciphertext in DataStore, and decrypted only right before an upload; state/ only knows whether one is present.
+- Status: Accepted (2026-11-11)
+- Anchor: e566261
+### Context
+- BYOK: no key in the repo or the APK. The key is a start condition;
+  deleting it ends the session.
+- Rule 5: only data/ touches Keystore and DataStore.
+  EncryptedSharedPreferences is deprecated; Tink is not in the V1 stack
+  (ADR-001).
+- Keystore keys cannot run on the JVM. Some Keystore failures are
+  permanent, others transient.
+### Decision
+- Entry: a temporary password field on the main screen (password
+  keyboard, no autocorrect, masked); Cap 3 replaces the screen, not the
+  storage. The typed key is never written to saved instance state. Save
+  trims, then applies the ADR-012 key rule in capture/ (no prefix or
+  length check); data/ stores what it is given.
+- Key: AndroidKeyStore alias hearcopy_api_key, AES-256, GCM, NoPadding,
+  IV chosen by Keystore, no user authentication, no unlocked-device
+  requirement, no StrongBox. Created on the first save, reused on
+  replace.
+- Blob: version byte | 12-byte IV | ciphertext with 128-bit tag, fixed
+  AAD; stored with a 4-character plaintext hint in one DataStore edit in
+  no_backup/datastore/settings.preferences_pb. A corrupt file is
+  replaced with an empty one; a read error reads as no key and deletes
+  nothing.
+- Presence check (process start and the main screen) never decrypts. A
+  malformed blob or a blob without its hint is deleted. containsAlias
+  false: blob and hint are deleted, key absent. A Keystore exception:
+  the key counts as present and nothing is deleted; the decrypt before
+  an upload decides.
+- Delete removes the Keystore entry first. Once it is gone the delete
+  counts as done even if clearing the DataStore fails:
+  apiKeyPresent=false, teardown as usual, and the next presence check
+  removes the leftover blob. Only a failed Keystore delete shows an
+  error and changes nothing.
+- Decrypt before an upload (2.4): a missing or permanently invalid key,
+  a tag mismatch or a malformed blob is Unreadable (blob, hint and key
+  deleted); any other Keystore error is Unavailable and deletes
+  nothing.
+- state/: Setup.apiKeyPresent (null until read), written only by
+  ApiKeyReported from capture/. Save and Delete go ui -> CaptureCommands
+  -> data/; the storage write completes before the dispatch. The main
+  screen asks for the key before any permission and continues the
+  setup once when a key appears while it is resumed; a declined step is
+  not asked again.
+- Delete during a session: teardown reason KeyRemoved, no alert.
+- The cipher is javax.crypto only and gets its key through an
+  interface; JVM tests use a software AES-256 key.
+- Rejected: a plaintext key via run-as or adb; local.properties or
+  BuildConfig (the key enters the APK); EncryptedSharedPreferences;
+  datastore-tink; decrypting at startup to check presence; deleting the
+  key on any decrypt exception; rememberSaveable for the field.
+### Consequences
+- datastore-preferences 1.3.0 adds 12 androidx.datastore artifacts and
+  atomicfu 0.28.0, and raises androidx.tracing 1.2.0 -> 2.0.1 (split
+  into tracing and tracing-android) and androidx.collection 1.5.0 ->
+  1.6.0. The merged manifest is unchanged at the anchor.
+- datastore's bundled protobuf calls greylisted sun.misc.Unsafe methods
+  (logged, allowed at the anchor).
+- A transient Keystore error at the startup check keeps the key as
+  present.
+- A permanently invalid Keystore key makes Save fail; Delete, then
+  Save, recovers.
+- A corrupted blob is found at the first upload, not at startup.
+- Uninstall or a data clear removes key and blob together; a blob moved
+  to another device is unreadable there.
+- The plaintext is a String during save and each upload and cannot be
+  zeroed.
+- The hint is 4 plaintext characters, the whole key for a key of 4
+  characters or fewer; accepted.
+- No protection on a rooted or compromised device.
