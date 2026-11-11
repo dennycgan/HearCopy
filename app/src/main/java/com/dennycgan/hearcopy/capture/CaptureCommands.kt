@@ -8,6 +8,7 @@ import com.dennycgan.hearcopy.data.ApiKeyDelete
 import com.dennycgan.hearcopy.data.ApiKeySave
 import com.dennycgan.hearcopy.data.ApiKeyStatus
 import com.dennycgan.hearcopy.data.SettingsRepository
+import com.dennycgan.hearcopy.data.TranscriptRepository
 import com.dennycgan.hearcopy.notify.CaptureNotifications
 import com.dennycgan.hearcopy.state.CaptureEvent
 import com.dennycgan.hearcopy.state.CaptureStateStore
@@ -25,6 +26,7 @@ class CaptureCommands(
     private val store: CaptureStateStore,
     private val notifications: CaptureNotifications,
     private val settings: SettingsRepository,
+    private val transcripts: TranscriptRepository,
     /** Application-wide, main thread: a key write and its report finish even if the screen goes. */
     private val scope: CoroutineScope,
     private val handle: () -> CaptureSessionHandle?,
@@ -71,6 +73,18 @@ class CaptureCommands(
     /** Reads whether a key is stored and reports it; called at process start. */
     fun loadApiKeyStatus() {
         scope.launch { refreshApiKey() }
+    }
+
+    /**
+     * Restores the stored transcript; called at process start. A transcript
+     * received in the meantime wins (TranscriptRestored applies only to none).
+     */
+    fun loadTranscript() {
+        scope.launch {
+            val text = transcripts.load() ?: return@launch
+            store.dispatch(CaptureEvent.TranscriptRestored(text))
+            log("transcript restored: length=${text.length}")
+        }
     }
 
     /** Reads and reports whether a key is stored; returns its hint, or null when there is none. */

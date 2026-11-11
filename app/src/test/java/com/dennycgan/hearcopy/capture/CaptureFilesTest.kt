@@ -86,6 +86,19 @@ class CaptureFilesTest {
     }
 
     @Test
+    fun `discard deletes a clip even with retention on and never touches debug`() {
+        val files = files(retainDebug = true)
+        files.keepOrDelete(files.newTempFile(1).apply { writeText("kept") })
+        val clip = files.newTempFile(2).apply { writeText("cancelled") }
+
+        assertTrue(files.discard(clip))
+
+        assertFalse(clip.exists())
+        assertTrue(files.debugClip(1).exists())
+        assertFalse(files.debugClip(2).exists())
+    }
+
+    @Test
     fun `temp file names are unique per attempt`() {
         val files = files()
         assertTrue(files.newTempFile(1) != files.newTempFile(2))

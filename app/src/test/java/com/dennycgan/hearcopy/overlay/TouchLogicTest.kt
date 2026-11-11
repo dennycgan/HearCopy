@@ -235,6 +235,14 @@ class TouchLogicTest {
     }
 
     @Test
+    fun `Completed looks like Ready, accepts a tap and has its own description`() {
+        assertEquals(TouchVisual.Idle, touchVisual(CaptureStatus.Completed))
+        assertEquals(ALPHA_IDLE, touchAlpha(CaptureStatus.Completed), 0f)
+        assertFalse(rejectsWithHaptic(CaptureStatus.Completed))
+        assertEquals(R.string.touch_description_completed, descriptionRes(CaptureStatus.Completed))
+    }
+
+    @Test
     fun `reject haptic constant by API level`() {
         assertEquals(HapticFeedbackConstants.LONG_PRESS, rejectHapticConstant(29))
         assertEquals(HapticFeedbackConstants.REJECT, rejectHapticConstant(30))

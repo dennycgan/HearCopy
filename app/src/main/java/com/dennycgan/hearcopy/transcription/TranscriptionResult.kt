@@ -40,8 +40,12 @@ sealed interface TranscriptionError {
     /** The call timeout fired, or HTTP 408. */
     data object Timeout : TranscriptionError
 
-    /** The connection failed, including a connect timeout. */
-    data object Network : TranscriptionError
+    /**
+     * The connection failed, including a connect timeout. [cause] is the
+     * exception's class name only (for example SocketException): no message,
+     * key or body.
+     */
+    data class Network(val cause: String) : TranscriptionError
 
     /** HTTP 5xx. */
     data class Server(val code: Int) : TranscriptionError

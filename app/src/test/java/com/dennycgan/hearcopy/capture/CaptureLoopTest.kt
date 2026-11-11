@@ -8,7 +8,8 @@ import com.dennycgan.hearcopy.capture.LoopHarness.Companion.awaitBlocking
 import com.dennycgan.hearcopy.capture.LoopHarness.Companion.eventually
 import com.dennycgan.hearcopy.state.CaptureEvent
 import com.dennycgan.hearcopy.state.CaptureStateStore
-import com.dennycgan.hearcopy.state.CaptureStatus.Ready
+import com.dennycgan.hearcopy.state.CaptureStatus.Completed
+import com.dennycgan.hearcopy.state.CaptureStatus.Processing
 import com.dennycgan.hearcopy.state.MIN_CLIP_MS
 import java.io.File
 import java.nio.ByteBuffer
@@ -134,7 +135,11 @@ class CaptureLoopTest {
             h.source.samples(2, LOUD)
             h.source.awaitIdle("read")
             assertEquals(CaptureResult.Saved(c.file), h.stopAndSave(c))
-            assertEquals(Ready, store.state.value.status)
+            // Rewritten in phase 2.4 (owner, Q1): was Ready. A saved clip stays in
+            // Processing for its upload; its transcript ends it, then the next tap.
+            assertEquals(Processing, store.state.value.status)
+            store.dispatch(CaptureEvent.TranscriptReady(c.attempt, "clip $index"))
+            assertEquals(Completed, store.state.value.status)
         }
 
         assertEquals(1, h.sources.size)

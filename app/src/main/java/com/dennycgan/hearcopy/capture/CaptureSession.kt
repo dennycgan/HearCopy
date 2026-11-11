@@ -56,7 +56,7 @@ sealed interface CaptureResult {
  * the diagnostics sink.
  */
 class CaptureSession(
-    private val attempt: Int,
+    val attempt: Int,
     private val outputFile: File,
     private val store: CaptureStateStore,
     private val scope: CoroutineScope,
@@ -76,6 +76,14 @@ class CaptureSession(
     private val detached = CompletableDeferred<Unit>()
 
     @Volatile private var startedAtMs = 0L
+
+    /**
+     * When this attempt entered Processing (a stop tap or the 300 s limit),
+     * on [clock]; null while it never did. Only such attempts get a
+     * transcription notification.
+     */
+    @Volatile var stoppedAtMs: Long? = null
+        private set
 
     /** Clock time of the first audio; written by the reader before `FirstAudio`. */
     @Volatile private var firstAudioAtMs = 0L
@@ -121,7 +129,10 @@ class CaptureSession(
         val atMs = clock()
         val state = store.dispatch(CaptureEvent.TapStop(atMs))
         when {
-            state.isCurrent(CaptureStatus.Processing) -> enterStopPath()
+            state.isCurrent(CaptureStatus.Processing) -> {
+                markStopped(atMs)
+                enterStopPath()
+            }
             state.isCurrent(CaptureStatus.Ready) -> discardTooShort(atMs)
         }
     }
@@ -169,8 +180,14 @@ class CaptureSession(
     private fun onClockLimit() {
         val state = store.dispatch(CaptureEvent.LimitReached(attempt))
         if (!state.isCurrent(CaptureStatus.Processing)) return
+        markStopped(clock())
         log("attempt=$attempt limit reached by clock")
         enterStopPath()
+    }
+
+    /** The first entry into Processing wins; the other cap path may confirm it later. */
+    private fun markStopped(atMs: Long) {
+        if (stoppedAtMs == null) stoppedAtMs = atMs
     }
 
     /** Requests the end of the clip, then waits up to the bound for the reader to detach it. */
@@ -229,7 +246,9 @@ class CaptureSession(
         }
         if (total >= MAX_SAMPLES) {
             capReached = true
-            store.dispatch(CaptureEvent.LimitReached(attempt))
+            if (store.dispatch(CaptureEvent.LimitReached(attempt)).isCurrent(CaptureStatus.Processing)) {
+                markStopped(clock())
+            }
             log("attempt=$attempt limit reached by sample count")
         }
     }

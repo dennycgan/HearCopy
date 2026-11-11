@@ -18,14 +18,19 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import com.dennycgan.hearcopy.HearCopyApplication
+import com.dennycgan.hearcopy.R
 import com.dennycgan.hearcopy.notify.CaptureNotifications
 import com.dennycgan.hearcopy.overlay.HearCopyTouch
 import com.dennycgan.hearcopy.state.CaptureEvent
 import com.dennycgan.hearcopy.state.CaptureStatus
+import com.dennycgan.hearcopy.state.FailureReason
 import com.dennycgan.hearcopy.state.TapAction
 import com.dennycgan.hearcopy.state.tapAction
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -60,6 +65,9 @@ class CaptureService : Service(), CaptureSessionHandle {
 
         /** The user deleted the API key on the main screen. */
         KeyRemoved(false),
+
+        /** The stored key can never be read again; found right before an upload. */
+        KeyUnreadable(true),
     }
 
     private val container by lazy { (application as HearCopyApplication).container }
@@ -71,6 +79,9 @@ class CaptureService : Service(), CaptureSessionHandle {
     private var overlay: HearCopyTouch? = null
     private var session: CaptureSession? = null
     private var loop: CaptureLoop? = null
+
+    /** The upload of the clip in Processing; at most one, since Processing rejects taps. */
+    private var transcription: Job? = null
     private var overlayWatcher: AppOpsManager.OnOpChangedListener? = null
 
     /**
@@ -265,10 +276,55 @@ class CaptureService : Service(), CaptureSessionHandle {
                 CaptureResult.TooShort -> "result: too short"
             },
         )
-        if (result is CaptureResult.Saved) {
-            val ok = withContext(Dispatchers.IO) { container.captureFiles.keepOrDelete(result.file) }
-            if (!ok) log("saved clip could not be kept or deleted cleanly")
+        val stoppedAtMs = finished.stoppedAtMs
+        when {
+            result is CaptureResult.Saved && !stopping && stoppedAtMs != null ->
+                startTranscription(finished.attempt, result.file, stoppedAtMs)
+            result is CaptureResult.Saved -> {
+                // The session ended first, or (unreachable) no stop time: never uploaded.
+                log("saved clip not uploaded; discarded")
+                withContext(Dispatchers.IO) { container.captureFiles.discard(result.file) }
+            }
+            stopping -> Unit
+            // Only attempts the user (or the limit) stopped get a notification.
+            result is CaptureResult.Failed && stoppedAtMs != null ->
+                container.notifications.showTranscriptFailed(failureTextRes(result.reason), newClip = true)
+            else -> Unit
         }
+    }
+
+    private fun startTranscription(attempt: Int, clip: File, stoppedAtMs: Long) {
+        val run = TranscriptionRun(
+            readKey = container.settings::readApiKey,
+            transcribe = container.transcriptionClient::transcribe,
+            saveTranscript = container.transcripts::save,
+            dispatch = store::dispatch,
+            notices = transcriptNotices,
+            disposeClip = { file, keep ->
+                val ok = withContext(Dispatchers.IO) {
+                    if (keep) container.captureFiles.keepOrDelete(file) else container.captureFiles.discard(file)
+                }
+                if (!ok) log("attempt=$attempt clip could not be kept or deleted cleanly")
+            },
+            onKeyUnreadable = { teardown(TeardownReason.KeyUnreadable) },
+            io = Dispatchers.IO,
+            clock = SystemClock::elapsedRealtime,
+            log = ::log,
+        )
+        // Lazy: on Main.immediate the run would start inline, before a
+        // teardown from inside it could find the job to cancel.
+        val job = scope.launch(start = CoroutineStart.LAZY) { run.run(attempt, clip, stoppedAtMs) }
+        transcription = job
+        job.invokeOnCompletion { if (transcription === job) transcription = null }
+        job.start()
+    }
+
+    private val transcriptNotices = object : TranscriptNotices {
+        override fun transcribing() = container.notifications.showTranscribing()
+        override fun completed() = container.notifications.showTranscriptDone()
+        override fun failed(reason: FailureReason) =
+            container.notifications.showTranscriptFailed(failureTextRes(reason), newClip = false)
+        override fun cancel() = container.notifications.cancelTranscript()
     }
 
     /**
@@ -286,10 +342,22 @@ class CaptureService : Service(), CaptureSessionHandle {
         // The reader deletes the cancelled clip's temp file when it detaches it.
         session?.cancel()
         session = null
+        // Until the in-flight lifecycle (phase 2.5), every ending cancels the
+        // upload; its notification goes with it. The run deletes its clip.
+        transcription?.let {
+            log("teardown: cancelling the upload")
+            it.cancel()
+            container.notifications.cancelTranscript()
+        }
+        transcription = null
         loop?.close()
         loop = null
         // Own notification id, so removing the foreground notification keeps it.
-        if (reason.postsAlert) container.notifications.postAuthorisationLostAlert()
+        if (reason.postsAlert) {
+            container.notifications.postAuthorisationLostAlert(
+                if (reason == TeardownReason.KeyUnreadable) R.string.notification_key_unreadable_text else R.string.notification_lost_text,
+            )
+        }
         projection?.let {
             it.unregisterCallback(projectionCallback)
             it.stop()

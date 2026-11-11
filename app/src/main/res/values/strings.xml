@@ -29,11 +29,32 @@
     <string name="status_ready">Ready. Tap the floating button to capture audio.</string>
     <string name="status_preparing">Starting capture…</string>
     <string name="status_recording">Capturing audio. Tap the floating button to stop.</string>
-    <string name="status_processing">Saving the clip…</string>
+    <string name="status_processing">Transcribing…</string>
+    <string name="status_completed">Transcript ready. Tap the floating button to capture again.</string>
+
+    <!-- Failure reasons: the main screen's status line and the failure notification -->
     <string name="status_failed_timeout">No audio arrived in time. Tap the floating button to try again.</string>
     <string name="status_failed_init">Audio capture could not start on this device.</string>
     <string name="status_failed_read">Audio capture stopped unexpectedly. Tap the floating button to try again.</string>
     <string name="status_failed_no_audio">The clip was silent. Play some audio and try again.</string>
+    <string name="status_failed_no_speech">No speech was recognised in the clip.</string>
+    <string name="status_failed_unauthorized">The API key was not accepted. Check the key and save it again.</string>
+    <string name="status_failed_forbidden">The API key is not allowed to use transcription.</string>
+    <string name="status_failed_rate_limited">Too many requests. Wait a moment and try again.</string>
+    <string name="status_failed_quota">The OpenAI account has run out of credit or reached its spending limit.</string>
+    <string name="status_failed_transcription_timeout">The transcription took too long and was stopped. Try again.</string>
+    <string name="status_failed_network">The transcription service could not be reached. Check the internet connection and try again.</string>
+    <string name="status_failed_server">The transcription service had a problem. Try again later.</string>
+    <string name="status_failed_rejected">The transcription service refused the clip.</string>
+    <string name="status_failed_malformed">The transcription service sent an unexpected answer. Try again.</string>
+    <string name="status_failed_too_large">The clip is too large to upload.</string>
+    <string name="status_failed_key_unavailable">The API key could not be read this time. Try again.</string>
+
+    <!-- Transcript -->
+    <string name="transcript_title">Transcript</string>
+    <string name="transcript_empty">No transcript yet. Capture some audio and its text appears here.</string>
+    <string name="action_copy_all">Copy all</string>
+    <string name="transcript_copied">Copied</string>
 
     <!-- Notifications -->
     <string name="channel_session_name">Capture session</string>
@@ -42,12 +63,19 @@
     <string name="notification_session_text">Tap the floating button to capture audio.</string>
     <string name="notification_lost_title">Audio capture stopped</string>
     <string name="notification_lost_text">The floating button is gone. Tap to open HearCopy and start again.</string>
+    <string name="notification_key_unreadable_text">The saved API key can no longer be read. Tap to open HearCopy and enter it again.</string>
+    <string name="notification_transcribing_title">Transcribing</string>
+    <string name="notification_transcribing_text">Audio received. Tap to return to HearCopy for the result.</string>
+    <string name="notification_done_title">Transcription complete</string>
+    <string name="notification_done_text">Tap to open HearCopy and copy the text.</string>
+    <string name="notification_failed_title">Transcription failed</string>
 
     <!-- hearcopyTouch -->
     <string name="touch_timer">%1$02d:%2$02d</string>
     <string name="touch_description_ready">Start capturing audio</string>
     <string name="touch_description_preparing">Starting audio capture</string>
     <string name="touch_description_recording">Stop capturing audio</string>
-    <string name="touch_description_processing">Saving the clip</string>
+    <string name="touch_description_processing">Transcribing the clip</string>
+    <string name="touch_description_completed">Transcript ready. Tap to capture audio again.</string>
     <string name="touch_description_failed">Capture failed. Tap to try again.</string>
 </resources>

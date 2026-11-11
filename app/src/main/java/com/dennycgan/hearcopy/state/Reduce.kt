@@ -11,6 +11,10 @@ import com.dennycgan.hearcopy.state.CaptureEvent.SessionEnded
 import com.dennycgan.hearcopy.state.CaptureEvent.SessionStarted
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStart
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStop
+import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptReady
+import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptRestored
+import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptionFailed
+import com.dennycgan.hearcopy.state.CaptureStatus.Completed
 import com.dennycgan.hearcopy.state.CaptureStatus.Failed
 import com.dennycgan.hearcopy.state.CaptureStatus.Preparing
 import com.dennycgan.hearcopy.state.CaptureStatus.Processing
@@ -52,7 +56,7 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
     // Gated only on the session: the reported RECORD_AUDIO value may be
     // stale, so the service checks the permission itself at tap time.
     TapStart ->
-        if (state.setup.projectionActive && (state.status == Ready || state.status is Failed)) {
+        if (state.setup.projectionActive && tapAction(state.status) == TapAction.Start) {
             state.copy(status = Preparing, attempt = state.attempt + 1)
         } else {
             state
@@ -83,9 +87,9 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
         if (status == Preparing) copy(status = Failed(FailureReason.PreparingTimeout)) else this
     }
 
-    is CaptureSaved -> state.forAttempt(event.attempt) {
-        if (status == Processing) copy(status = Ready) else this
-    }
+    // The clip stays in Processing while it is uploaded; the upload's
+    // outcome (TranscriptReady or TranscriptionFailed) ends it.
+    is CaptureSaved -> state
 
     is CaptureFailed -> state.forAttempt(event.attempt) {
         if (status == Preparing || status is Recording || status == Processing) {
@@ -94,6 +98,20 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
             this
         }
     }
+
+    // The transcript was written before this event, so it is kept even when
+    // the attempt is no longer current (a teardown during the write); only
+    // the status change belongs to the attempt.
+    is TranscriptReady -> state.copy(lastTranscript = event.text).forAttempt(event.attempt) {
+        if (status == Processing) copy(status = Completed) else this
+    }
+
+    is TranscriptionFailed -> state.forAttempt(event.attempt) {
+        if (status == Processing) copy(status = Failed(event.reason)) else this
+    }
+
+    // A transcript received in this process is newer than the stored one.
+    is TranscriptRestored -> if (state.lastTranscript == null) state.copy(lastTranscript = event.text) else state
 }
 
 private inline fun CaptureState.forAttempt(

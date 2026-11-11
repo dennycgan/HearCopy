@@ -192,7 +192,8 @@ class CaptureSessionTest {
         h.source.samples(1, LOUD)
 
         assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
-        assertEquals(Ready, status)
+        // Rewritten in phase 2.4 (owner, Q1): was Ready; a saved clip stays in Processing for its upload.
+        assertEquals(Processing, status)
         val bytes = c.file.readBytes()
         assertEquals(44 + 6 * chunkBytes, bytes.size)
         WavWriterTest.assertHeader(bytes, dataBytes = 6 * chunkBytes)
@@ -233,7 +234,8 @@ class CaptureSessionTest {
         h.source.enqueue(Step.Code(-3))
 
         assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
-        assertEquals(Ready, status)
+        // Rewritten in phase 2.4 (owner, Q1): was Ready; a saved clip stays in Processing for its upload.
+        assertEquals(Processing, status)
         eventually("restart") { h.logged("read error -3; restart 1/3") }
     }
 
@@ -403,7 +405,8 @@ class CaptureSessionTest {
 
         assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
         h.source.endless = null
-        assertEquals(Ready, status)
+        // Rewritten in phase 2.4 (owner, Q1): was Ready; a saved clip stays in Processing for its upload.
+        assertEquals(Processing, status)
         assertTrue(h.logged("limit reached by sample count"))
         val dataBytes = CaptureSession.MAX_SAMPLES * 2
         assertEquals(4_800_000, CaptureSession.MAX_SAMPLES)
@@ -427,7 +430,8 @@ class CaptureSessionTest {
         assertEquals(Processing, status)
         h.source.samples(1, LOUD)
         assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
-        assertEquals(Ready, status)
+        // Rewritten in phase 2.4 (owner, Q1): was Ready; a saved clip stays in Processing for its upload.
+        assertEquals(Processing, status)
         assertTrue(h.logged("limit reached by clock"))
     }
 
@@ -508,6 +512,83 @@ class CaptureSessionTest {
         assertEquals(CaptureResult.Failed(FailureReason.ReadError), c.session.result.awaitBlocking())
         assertEquals(CaptureStatus.Failed(FailureReason.ReadError), status)
         assertFalse(File(file.parentFile, file.name).exists())
+    }
+
+    // Stop time (phase 2.4): only attempts that reached Processing get a notification
+
+    @Test
+    fun `a manual stop records its time, also for a clip that turns out silent`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(5, 0)
+        h.source.awaitIdle("read")
+
+        advance(MIN_CLIP_MS)
+        val stopAt = testScheduler.currentTime
+        c.session.stop()
+        h.source.samples(1, 0)
+
+        assertEquals(CaptureResult.Failed(FailureReason.NoAudio), c.session.result.awaitBlocking())
+        assertEquals(stopAt, c.session.stoppedAtMs)
+    }
+
+    @Test
+    fun `the clock limit records its time`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        advance(1_500)
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("read")
+
+        advance(CaptureSession.MAX_DURATION_MS)
+        assertEquals(Processing, status)
+        assertEquals(1_500 + CaptureSession.MAX_DURATION_MS, c.session.stoppedAtMs)
+        h.source.samples(1, LOUD)
+        assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
+    }
+
+    @Test
+    fun `the sample cap records its time`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        h.source.endless = Step.Samples(1_000, LOUD)
+
+        assertEquals(CaptureResult.Saved(c.file), c.session.result.awaitBlocking())
+        h.source.endless = null
+        assertEquals(testScheduler.currentTime, c.session.stoppedAtMs)
+    }
+
+    @Test
+    fun `attempts that never reached Processing have no stop time`() = runTest {
+        val h = harness()
+        val timedOut = h.tap()
+        advance(CaptureSession.PREPARING_TIMEOUT_MS)
+        h.source.samples(1, LOUD)
+        h.source.awaitIdle("skip")
+        assertEquals(CaptureResult.Failed(FailureReason.PreparingTimeout), timedOut.session.result.awaitBlocking())
+        assertEquals(null, timedOut.session.stoppedAtMs)
+
+        val readError = h.tap()
+        h.source.samples(2, LOUD)
+        h.source.awaitIdle("read")
+        h.source.enqueue(Step.Code(-6))
+        assertEquals(CaptureResult.Failed(FailureReason.ReadError), readError.session.result.awaitBlocking())
+        assertEquals(null, readError.session.stoppedAtMs)
+    }
+
+    @Test
+    fun `a clip discarded as too short has no stop time`() = runTest {
+        val h = harness()
+        val c = h.tap()
+        h.source.samples(2, LOUD)
+        h.source.awaitIdle("read")
+
+        advance(MIN_CLIP_MS - 1)
+        c.session.stop()
+        h.source.samples(1, LOUD)
+
+        assertEquals(CaptureResult.TooShort, c.session.result.awaitBlocking())
+        assertEquals(null, c.session.stoppedAtMs)
     }
 
     /** `getPath()` throws exactly once after [armed] is set. */

@@ -58,6 +58,12 @@ class CaptureFiles(root: File, private val retainDebug: Boolean) {
         return ok
     }
 
+    /**
+     * Deletes a saved clip that must not be retained (its upload was
+     * cancelled or never started). Returns false if it is still there.
+     */
+    fun discard(saved: File): Boolean = saved.delete() || !saved.exists()
+
     /** `debug/capture-[index].wav`; 1 is the newest. */
     fun debugClip(index: Int): File = File(debugDir, "capture-$index.wav")
 

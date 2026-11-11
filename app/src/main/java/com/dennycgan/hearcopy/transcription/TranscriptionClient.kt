@@ -7,6 +7,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.ConnectionPool
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -46,6 +47,11 @@ class TranscriptionClient internal constructor(
         .callTimeout(callTimeoutMillis, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(false)
         .followRedirects(false)
+        // No reuse: every upload opens a fresh connection. A pooled connection
+        // idle for minutes may already be dead, and without a retry that fails
+        // the clip (ADR-014). The keep-alive value is required to be positive
+        // but has no effect with zero idle connections.
+        .connectionPool(ConnectionPool(0, 1, TimeUnit.SECONDS))
         .build()
 
     /**
@@ -68,14 +74,14 @@ class TranscriptionClient internal constructor(
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    continuation.resume(failure(afterIoFailure(call)))
+                    continuation.resume(failure(afterIoFailure(call, e)))
                 }
 
                 override fun onResponse(call: Call, response: Response) {
                     val result = try {
                         response.use(::interpret)
                     } catch (e: IOException) {
-                        failure(afterIoFailure(call))
+                        failure(afterIoFailure(call, e))
                     }
                     continuation.resume(result)
                 }
@@ -122,8 +128,8 @@ class TranscriptionClient internal constructor(
      * call. After a coroutine cancellation the resume is ignored, so a
      * cancelled call that still resumes means the call timeout fired.
      */
-    private fun afterIoFailure(call: Call): TranscriptionError =
-        if (call.isCanceled()) TranscriptionError.Timeout else TranscriptionError.Network
+    private fun afterIoFailure(call: Call, e: IOException): TranscriptionError =
+        if (call.isCanceled()) TranscriptionError.Timeout else TranscriptionError.Network(causeName(e))
 
     private fun parseTranscript(body: String): TranscriptionResult {
         val text = parseObject(body)?.stringOrNull("text")
@@ -186,6 +192,12 @@ class TranscriptionClient internal constructor(
             "organization_usage_limit_exceeded",
         )
         private const val SPEND_LIMIT_SUFFIX = "_spend_limit_exceeded"
+
+        /**
+         * The exception's class name only, never its message: a message can
+         * describe the request. Anonymous classes have no simple name.
+         */
+        fun causeName(e: Throwable): String = e.javaClass.simpleName.ifEmpty { e.javaClass.name }
 
         /** The key save rule: non-empty, every character visible ASCII (0x21-0x7E). No trim. */
         fun isValidApiKey(key: String): Boolean =

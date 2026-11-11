@@ -11,13 +11,19 @@ import com.dennycgan.hearcopy.state.CaptureEvent.SessionEnded
 import com.dennycgan.hearcopy.state.CaptureEvent.SessionStarted
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStart
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStop
+import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptReady
+import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptRestored
+import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptionFailed
+import com.dennycgan.hearcopy.state.CaptureStatus.Completed
 import com.dennycgan.hearcopy.state.CaptureStatus.Failed
 import com.dennycgan.hearcopy.state.CaptureStatus.Preparing
 import com.dennycgan.hearcopy.state.CaptureStatus.Processing
 import com.dennycgan.hearcopy.state.CaptureStatus.Ready
 import com.dennycgan.hearcopy.state.CaptureStatus.Recording
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReduceTest {
@@ -217,9 +223,11 @@ class ReduceTest {
         }
     }
 
+    // Rewritten in phase 2.4 (Cap 2 design Q9): was "CaptureSaved moves Processing to Ready".
     @Test
-    fun `CaptureSaved moves Processing to Ready`() {
-        assertEquals(state(Ready), reduce(state(Processing), CaptureSaved(1)))
+    fun `CaptureSaved keeps Processing while the clip is uploaded`() {
+        val before = state(Processing)
+        assertSame(before, reduce(before, CaptureSaved(1)))
     }
 
     @Test
@@ -314,9 +322,96 @@ class ReduceTest {
             s = reduce(s, FirstAudio(attempt, atMs = i * 1000L))
             s = reduce(s, TapStop(atMs = i * 1000L + MIN_CLIP_MS))
             s = reduce(s, CaptureSaved(attempt))
-            assertEquals("recording ${i + 1}", Ready, s.status)
+            // Rewritten in phase 2.4 (owner, Q1): was Ready right after CaptureSaved.
+            assertEquals("recording ${i + 1} saved", Processing, s.status)
+            s = reduce(s, TranscriptReady(attempt, "text ${i + 1}"))
+            assertEquals("recording ${i + 1}", Completed, s.status)
+            assertEquals("text ${i + 1}", s.lastTranscript)
         }
         assertEquals(3, s.attempt)
         assertEquals(true, s.setup.projectionActive)
+    }
+
+    // Transcription (phase 2.4)
+
+    @Test
+    fun `TranscriptReady completes its attempt and sets the transcript`() {
+        val after = reduce(state(Processing).copy(lastTranscript = "old"), TranscriptReady(1, "new"))
+        assertEquals(state(Completed).copy(lastTranscript = "new"), after)
+    }
+
+    @Test
+    fun `TranscriptReady of a stale attempt sets the transcript but not the status`() {
+        // Written to storage before a teardown ended the session.
+        val after = reduce(state(Ready, attempt = 2), TranscriptReady(1, "new"))
+        assertEquals(state(Ready, attempt = 2).copy(lastTranscript = "new"), after)
+    }
+
+    @Test
+    fun `TranscriptReady outside Processing sets only the transcript`() {
+        listOf(Ready, Preparing, Recording(10), Completed, Failed(FailureReason.Network)).forEach { status ->
+            val after = reduce(state(status), TranscriptReady(1, "new"))
+            assertEquals("from $status", state(status).copy(lastTranscript = "new"), after)
+        }
+    }
+
+    @Test
+    fun `TranscriptionFailed fails Processing with its reason and keeps the transcript`() {
+        val before = state(Processing).copy(lastTranscript = "old")
+        FailureReason.entries.forEach { reason ->
+            val after = reduce(before, TranscriptionFailed(1, reason))
+            assertEquals("$reason", state(Failed(reason)).copy(lastTranscript = "old"), after)
+        }
+    }
+
+    @Test
+    fun `TranscriptionFailed outside Processing or of another attempt is ignored`() {
+        listOf(Ready, Preparing, Recording(10), Completed, Failed(FailureReason.ReadError)).forEach { status ->
+            val before = state(status)
+            assertSame("from $status", before, reduce(before, TranscriptionFailed(1, FailureReason.Network)))
+        }
+        val stale = state(Processing, attempt = 2)
+        assertSame(stale, reduce(stale, TranscriptionFailed(1, FailureReason.Network)))
+    }
+
+    @Test
+    fun `TranscriptRestored sets only a missing transcript`() {
+        assertEquals("stored", reduce(state(Ready), TranscriptRestored("stored")).lastTranscript)
+        val received = state(Completed).copy(lastTranscript = "newer")
+        assertSame(received, reduce(received, TranscriptRestored("stored")))
+    }
+
+    @Test
+    fun `TapStart from Completed starts a new recording and keeps the transcript`() {
+        val after = reduce(state(Completed).copy(lastTranscript = "old"), TapStart)
+        assertEquals(state(Preparing, attempt = 2).copy(lastTranscript = "old"), after)
+        val noSession = state(Completed, setup = session.copy(projectionActive = false))
+        assertSame(noSession, reduce(noSession, TapStart))
+    }
+
+    @Test
+    fun `no failure, discard or session end clears the transcript`() {
+        val kept = "old"
+        listOf(
+            state(Processing) to CaptureFailed(1, FailureReason.NoAudio),
+            state(Processing) to TranscriptionFailed(1, FailureReason.NoSpeech),
+            state(Recording(10)) to TapStop(atMs = 10 + MIN_CLIP_MS - 1),
+            state(Processing) to SessionEnded,
+            state(Completed) to SessionEnded,
+        ).forEach { (before, event) ->
+            assertEquals("$event", kept, reduce(before.copy(lastTranscript = kept), event).lastTranscript)
+        }
+    }
+
+    @Test
+    fun `state and transcript events never print the transcript`() {
+        val text = "a private sentence"
+        val printed = listOf(
+            state(Completed).copy(lastTranscript = text).toString(),
+            TranscriptReady(1, text).toString(),
+            TranscriptRestored(text).toString(),
+        )
+        printed.forEach { assertFalse(it, it.contains("private")) }
+        assertTrue(printed[0].contains("length=${text.length}"))
     }
 }

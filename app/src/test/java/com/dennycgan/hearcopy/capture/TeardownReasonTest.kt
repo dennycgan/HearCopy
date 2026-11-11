@@ -15,6 +15,7 @@ class TeardownReasonTest {
             TeardownReason.CaptureLost to true,
             TeardownReason.Internal to false,
             TeardownReason.KeyRemoved to false,
+            TeardownReason.KeyUnreadable to true,
         )
         assertEquals(TeardownReason.entries.toSet(), expected.keys)
         expected.forEach { (reason, alert) -> assertEquals("for $reason", alert, reason.postsAlert) }

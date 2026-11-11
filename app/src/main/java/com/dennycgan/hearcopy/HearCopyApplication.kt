@@ -14,5 +14,6 @@ class HearCopyApplication : Application() {
         container.captureFiles.clearTemp()
         container.notifications.createChannels()
         container.captureCommands.loadApiKeyStatus()
+        container.captureCommands.loadTranscript()
     }
 }

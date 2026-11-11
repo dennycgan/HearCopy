@@ -171,7 +171,7 @@ internal fun msToNextTick(elapsedMs: Long): Long =
 internal fun touchVisual(status: CaptureStatus): TouchVisual = when (status) {
     is CaptureStatus.Recording -> TouchVisual.Recording
     CaptureStatus.Processing -> TouchVisual.Processing
-    CaptureStatus.Ready, CaptureStatus.Preparing, is CaptureStatus.Failed -> TouchVisual.Idle
+    CaptureStatus.Ready, CaptureStatus.Preparing, CaptureStatus.Completed, is CaptureStatus.Failed -> TouchVisual.Idle
 }
 
 /** Button opacity, tuned here only. No status is fully opaque: content always shows through. */
@@ -181,7 +181,7 @@ internal const val ALPHA_ACTIVE = 0.85f
 /** Preparing looks like Ready: nothing changes before the first audio arrives. */
 internal fun touchAlpha(status: CaptureStatus): Float = when (status) {
     is CaptureStatus.Recording, CaptureStatus.Processing -> ALPHA_ACTIVE
-    CaptureStatus.Ready, CaptureStatus.Preparing, is CaptureStatus.Failed -> ALPHA_IDLE
+    CaptureStatus.Ready, CaptureStatus.Preparing, CaptureStatus.Completed, is CaptureStatus.Failed -> ALPHA_IDLE
 }
 
 internal fun descriptionRes(status: CaptureStatus): Int = when (status) {
@@ -189,6 +189,7 @@ internal fun descriptionRes(status: CaptureStatus): Int = when (status) {
     CaptureStatus.Preparing -> R.string.touch_description_preparing
     is CaptureStatus.Recording -> R.string.touch_description_recording
     CaptureStatus.Processing -> R.string.touch_description_processing
+    CaptureStatus.Completed -> R.string.touch_description_completed
     is CaptureStatus.Failed -> R.string.touch_description_failed
 }
 

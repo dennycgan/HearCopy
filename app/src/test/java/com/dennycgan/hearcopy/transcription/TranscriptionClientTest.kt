@@ -25,6 +25,7 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import mockwebserver3.SocketEffect
+import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartReader
 import okhttp3.OkHttpClient
@@ -35,6 +36,7 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -87,6 +89,46 @@ class TranscriptionClientTest {
         assertEquals(120_000, http.callTimeoutMillis)
         assertFalse(http.retryOnConnectionFailure)
         assertFalse(http.followRedirects)
+    }
+
+    // Connection reuse (ADR-014): none, so a dead pooled connection can never fail a clip.
+
+    @Test
+    fun `every upload opens a fresh connection and none stays idle`() {
+        respond(200, """{"text":"one"}""")
+        respond(200, """{"text":"two"}""")
+        val transcription = client()
+        val file = clip()
+        assertEquals(TranscriptionResult.Success("one"), transcribe(file, client = transcription))
+        assertEquals(TranscriptionResult.Success("two"), transcribe(file, client = transcription))
+
+        val first = server.takeRequest()
+        val second = server.takeRequest()
+        // Each request is the first exchange on its connection...
+        assertEquals(0, first.exchangeIndex)
+        assertEquals(0, second.exchangeIndex)
+        // ...and the two arrived on different connections.
+        assertNotEquals(first.connectionIndex, second.connectionIndex)
+        assertEquals(0, transcription.httpClient.connectionPool.idleConnectionCount())
+    }
+
+    /** Shows what the two indices mean, so the test above can tell reuse from no reuse. */
+    @Test
+    fun `control - a pooled client reuses one connection for both requests`() {
+        respond(200)
+        respond(200)
+        val pooled = client().httpClient.newBuilder().connectionPool(ConnectionPool()).build()
+        repeat(2) {
+            pooled.newCall(Request.Builder().url(server.url("/")).post("x".toRequestBody()).build())
+                .execute().close()
+        }
+
+        val first = server.takeRequest()
+        val second = server.takeRequest()
+        assertEquals(first.connectionIndex, second.connectionIndex)
+        assertEquals(0, first.exchangeIndex)
+        assertEquals(1, second.exchangeIndex)
+        assertEquals(1, pooled.connectionPool.idleConnectionCount())
     }
 
     @Test
@@ -271,7 +313,8 @@ class TranscriptionClientTest {
         val url = closed.url("/")
         closed.close()
         val result = runBlocking { TranscriptionClient(url, 5_000).transcribe(clip(), FAKE_KEY) }
-        assertEquals(failure(Network), result)
+        // Phase 2.4 (ADR-014): Network now carries the exception class name.
+        assertEquals(failure(Network("ConnectException")), result)
     }
 
     @Test
@@ -327,10 +370,34 @@ class TranscriptionClientTest {
     }
 
     @Test
+    fun `a network failure carries only the exception class name`() {
+        respond(200, """{"text":"never"}""") { onRequestStart(SocketEffect.CloseSocket()) }
+        val result = transcribe(clip())
+
+        val error = (result as TranscriptionResult.Failure).error
+        assertTrue("$error", error is Network)
+        val cause = (error as Network).cause
+        assertTrue("cause is a class name: $cause", cause.matches(Regex("""[A-Za-z_$][\w$.]*""")))
+        assertFalse(cause.contains(FAKE_KEY))
+        assertFalse(cause.contains(" "))
+        assertNoKey(result, FAKE_KEY)
+    }
+
+    @Test
+    fun `the cause name drops the exception message`() {
+        val withMessage = java.net.SocketException("Bearer $FAKE_KEY rejected")
+        assertEquals("SocketException", TranscriptionClient.causeName(withMessage))
+        val anonymous = object : java.io.IOException("Bearer $FAKE_KEY") {}
+        val name = TranscriptionClient.causeName(anonymous)
+        assertTrue(name.isNotEmpty())
+        assertFalse(name.contains(FAKE_KEY))
+    }
+
+    @Test
     fun `every error type prints without the key`() {
         val errors = listOf(
             InvalidKey, TooLarge, Unauthorized, Forbidden, RateLimited, QuotaExceeded,
-            Timeout, Network, Server(500), Rejected(400), Malformed, NoSpeech,
+            Timeout, Network("SocketException"), Server(500), Rejected(400), Malformed, NoSpeech,
         )
         errors.forEach { assertNoKey(failure(it), FAKE_KEY) }
     }

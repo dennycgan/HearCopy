@@ -20,6 +20,14 @@ class TapActionTest {
     }
 
     @Test
+    fun `a tap in Completed starts a new recording, as reduce agrees`() {
+        assertEquals(TapAction.Start, tapAction(CaptureStatus.Completed))
+        val session = Setup(overlayGranted = true, recordAudioGranted = true, projectionActive = true)
+        val before = CaptureState(session, CaptureStatus.Completed, attempt = 1)
+        assertEquals(CaptureStatus.Preparing, reduce(before, CaptureEvent.TapStart).status)
+    }
+
+    @Test
     fun `tap action agrees with reduce`() {
         val session = Setup(overlayGranted = true, recordAudioGranted = true, projectionActive = true)
         listOf(

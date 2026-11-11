@@ -17,6 +17,7 @@ enum class TapAction {
  */
 fun tapAction(status: CaptureStatus): TapAction = when (status) {
     CaptureStatus.Ready -> TapAction.Start
+    CaptureStatus.Completed -> TapAction.Start
     is CaptureStatus.Failed -> TapAction.Start
     CaptureStatus.Preparing -> TapAction.Ignore
     is CaptureStatus.Recording -> TapAction.Stop
