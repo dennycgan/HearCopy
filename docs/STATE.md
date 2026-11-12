@@ -7,11 +7,19 @@ details live in DECISIONS.md.
 
 - [x] Cap 0 Foundation
 - [x] Cap 1 Capture session + hearcopyTouch
-- [~] Cap 2 Transcription loop  <- YOU ARE HERE
+- [x] Cap 2 Transcription loop
+- [ ] Public repo  <- YOU ARE HERE
+  - README discloses continuous playback capture during an active
+    session; only audio after a tap is kept.
+  - README lists which apps cannot be captured and why; the check is to
+    try a short clip.
 - [ ] Cap 3 Main UI, settings and lifecycle completion
   - Persist the hearcopyTouch position (DataStore, data/). The overlay
     reads and writes it only through state/ and CaptureCommands (Rule 4),
     never overlay -> data/.
+  - Key setup: clear the clipboard after a key save, a test
+    transcription button, failure texts that say what to do (with
+    D-006).
 - [ ] V1 release
   - Includes Device-B (Android 11) full flow, including: the overlay
     permission guidance does not promise HearCopy's own settings page;
@@ -21,24 +29,20 @@ details live in DECISIONS.md.
     @color references or need a CopyAndThemeTest decision).
   - Keep or remove the debug-only WAV retention (debug builds keep the
     last three valid clips).
-  - README discloses continuous playback capture during an active
-    session; only audio after a tap is kept.
 
-## Phase Roadmap (Cap 2 Transcription loop)
+## Phase Roadmap (Public repo)
 
-- [x] 2.1 Minimum clip length: TapStop stop time, discard below 1.0 s
-  without upload (ADR-010) (6b38170)
-- [x] 2.2 Transcription client: OkHttp request, JSON parsing, error
-  mapping, no silent retry, key hygiene; JVM tests only (ADR-011,
-  ADR-012) (b9517a2)
-- [x] 2.3 API key: Keystore AES-GCM storage in DataStore, temporary key
-  field, key as a start condition, KeyRemoved (ADR-013) (e566261)
-- [x] 2.4 Transcription loop on Device-A (first real-key phase): upload
-  after save, Completed, transcript persistence and display,
-  notification, Processing haptic, KeyUnreadable teardown and alert
-  (ADR-014) (13d6de4)
-- [ ] 2.5 Lifecycle with a transcription in flight: SessionLost,
-  deferred stop, Recents cancel, consent after the deferred stop
+- [ ] LICENSE: the owner chooses the licence before this step starts
+- [ ] README: status, build, security (key storage, where the key and
+  audio are sent, key guidance in three tiers), continuous capture
+  disclosure, capture limits, "How this was built"
+- [ ] CLAUDE.md publication: reviewed for public reading, tracked and
+  added to the RepoLayoutTest root allowlist (rules edit and an ADR)
+- [ ] Full-history privacy audit: keys, personal email, local absolute
+  paths, real device model names, private notes never committed; a
+  finding is reported, never fixed by rewriting history
+- [ ] GitHub secret scanning and push protection (owner)
+- [ ] Visibility switch (owner)
 
 ## Known debt
 
@@ -49,3 +53,4 @@ details live in DECISIONS.md.
 | D-003 | Accepted | 0 | Lint `NewerVersionAvailable` for every catalog library it reports (Konsist, kotlinx-coroutines-android, kotlinx-coroutines-test; first seen: Konsist 0.18.1) | Dependency versions are upgraded deliberately as planned work, not on lint prompts; 0.18.0 matches Kotlin 2.4.21 exactly | - |
 | D-004 | Accepted | 1 | Lint LockedOrientationActivity and DiscouragedApi on MainActivity screenOrientation | ADR-003 | - |
 | D-005 | Accepted | 2 | The KeyUnreadable alert can be silent: the transcript notification posted just before it uses up Android's per-app sound rate limit | ADR-014; the banner still shows | - |
+| D-006 | Open | 2 | The NoAudio text says the clip was silent, although the source app may not allow capture | Blocked and silent sources both record as exact zeros, so the text must cover both causes | Cap 3 (failure copy) |

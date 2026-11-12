@@ -38,3 +38,20 @@ Archive of each closed Cap's phases. Append only.
   reuse or re-request, authorisation lost (hide, alert, stop) including
   capture loss and the overlay app-op, immediate overlay removal, single
   main screen instance, no duplicate button (ADR-007) (cc0a16a)
+
+## Cap 2: Transcription loop (2026-11-12)
+
+- [x] 2.1 Minimum clip length: TapStop stop time, discard below 1.0 s
+  without upload (ADR-010) (6b38170)
+- [x] 2.2 Transcription client: OkHttp request, JSON parsing, error
+  mapping, no silent retry, key hygiene; JVM tests only (ADR-011,
+  ADR-012) (b9517a2)
+- [x] 2.3 API key: Keystore AES-GCM storage in DataStore, temporary key
+  field, key as a start condition, KeyRemoved (ADR-013) (e566261)
+- [x] 2.4 Transcription loop on Device-A (first real-key phase): upload
+  after save, Completed, transcript persistence and display,
+  notification, Processing haptic, KeyUnreadable teardown and alert
+  (ADR-014) (13d6de4)
+- [x] 2.5 Lifecycle with a transcription in flight: SessionLost,
+  deferred stop, Recents cancel, consent after the deferred stop
+  (ADR-015) (8ed5559)

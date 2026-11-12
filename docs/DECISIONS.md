@@ -637,3 +637,110 @@ native rates.
   5 min) and did not cover the 4 min 27 s to 5 min window where the stale
   reuse failed; the JVM test that every upload opens a fresh connection
   and keeps none idle is the guarantee.
+
+## ADR-015: An upload in flight outlives a lost capture session
+> When capture authorisation is lost during an upload, the button goes and the alert posts at once, but the service stays in the foreground until the upload ends; ending the session from Recents or deleting the key still cancels it.
+- Status: Accepted (2026-11-12)
+- Anchor: 8ed5559
+### Context
+- ADR-007: the service stops only once no transcription is in flight;
+  teardown runs once per service instance and later calls return early;
+  the reopen case "service running, projection invalid" cannot persist.
+- ADR-014: until phase 2.5 every teardown cancels an upload in flight, so
+  ProjectionLost, PermissionLost and CaptureLost lose a result whose
+  upload may already be billed (ADR-012).
+- An upload needs the key, the clip and the network, not the projection.
+  Device-A: a 242 s clip took 36.8 s from stop to result.
+- Revoking RECORD_AUDIO kills the process and Processing rejects taps, so
+  PermissionLost during an upload comes only from the overlay app-op.
+- The product spec's lifecycle rule 3: removing HearCopy from Recents
+  ends the use, cancels the transcription and ignores a late result. Its
+  reopen rule 4 asks for consent again when the service runs without a
+  valid projection.
+### Decision
+- TeardownReason gains defersUpload: ProjectionLost, PermissionLost and
+  CaptureLost defer; UserEnded, KeyRemoved, Internal and KeyUnreadable
+  do not.
+- The service has three phases: Live, Deferred, Ended. A deferring reason
+  with an upload in flight moves Live to Deferred: the button is removed,
+  the alert posted, the loop closed and the projection stopped at once,
+  as in ADR-007; state gets SessionLost (projectionActive false, status
+  and attempt unchanged); the foreground notification is replaced in
+  place with a finishing text on the silent session channel. The upload
+  and its notification go on. When the upload job ends, whatever its
+  outcome: SessionEnded, stopForeground, stopSelf, on the main thread.
+- Any other ending, or a deferring reason with no upload in flight
+  (recording, or a clip still being finalised), stops at once and
+  cancels any upload, as before; such a clip is discarded.
+- In the Deferred phase, UserEnded, KeyRemoved, Internal (onDestroy) or
+  KeyUnreadable cancels the upload and its notification and stops at
+  once, without a second alert; a deferring reason is ignored. Recents
+  cancels per the product spec's lifecycle rule 3; a key delete cancels
+  as decided for KeyRemoved (ADR-013) and checked on Device-A (ADR-014).
+  onDestroy must end the phase, or the main screen would stay held.
+- This amends ADR-007: the service waits for an upload in flight only
+  after ProjectionLost, PermissionLost or CaptureLost; a later teardown
+  call returns early only when nothing is waiting or it is a deferring
+  reason; and "service running, projection invalid" now persists for at
+  most the upload, up to the 120 s call timeout. ADR-007 Status is
+  unchanged.
+- Main screen: finishing = projectionActive false and status not Ready,
+  reachable only between SessionLost and SessionEnded. While finishing
+  it shows "Finishing the last transcription…", hides the capture action
+  and holds the consent request; when finishing ends it continues the
+  setup once if resumed, otherwise on its next resume. This third reopen
+  case deviates from the product spec's reopen rule 4: consent is held
+  until the service has ended, because the ending instance ignores a
+  start.
+- This replaces ADR-014's "until phase 2.5, a teardown with an upload in
+  flight cancels the upload and the transcript notification for every
+  reason". ADR-014 Status is unchanged.
+- Rejected: cancelling for every reason (loses a result that may be
+  billed); keeping the session without a projection (the button could
+  not record); a state field for the stopping service (existing fields
+  identify the window); posting the alert after the result (the button
+  is already gone); a wakelock for the window (WAKE_LOCK is not
+  allowlisted); continuing the upload after a Recents removal and
+  showing the result on the next open (owner reviewed 2026-11-12 and
+  kept the product spec's lifecycle rule 3: a Recents removal is the
+  only explicit way to end HearCopy, so it must stop everything; users
+  expect nothing to keep running or upload audio after they remove the
+  app; whether the process survives a Recents removal on Device-A is
+  not settled: ADR-007 recorded a reclaim about 1 s later, phase 2.5
+  check 1 saw none).
+### Consequences
+- A result in flight survives ProjectionLost, overlay revocation and
+  CaptureLost; a recording in progress at the loss is still lost.
+- The foreground service runs up to the 120 s call timeout after the
+  button is gone.
+- The alert is muted when the loss comes within Android's per-app alert
+  interval of the transcript banner (as D-005); the banner still shows.
+- No wakelock in the window: with the screen off the upload may stall
+  until the call timeout. Unverified.
+- A start that reaches the ending instance is ignored and logged; the
+  main screen cannot send one while finishing.
+- A foreground service of type mediaProjection without a projection is
+  not verified on Android 14+; V1 commits Android 10.
+- Device-A at the anchor:
+  - A screen recorder took the projection 4.7 s into the upload of a
+    274.6 s clip: the button was removed 16 ms after the callback and
+    the alert sounded; AudioRecord.stop() then blocked the main thread
+    for 998 ms (as in ADR-007), so SessionLost followed 1.03 s after
+    the loss. The result arrived 42.1 s after the stop; the service
+    stopped 95 ms after the upload returned.
+  - The main screen, opened from the alert during that window, showed
+    the finishing line without the capture action and asked for
+    consent 38 ms after the service stopped. The checklist order was
+    not followed: the screen recorder was still recording, so that
+    dialog was left unanswered and closed by a tap on the transcript
+    notification; after the recorder was stopped, the action button
+    asked again and the session stayed up.
+  - Overlay revoked 2.3 s into the upload of a 273.5 s clip: result
+    37.6 s after the stop; the service stopped 143 ms after the upload
+    returned.
+  - Recents 3.5 s into the window (overlay revoked 2.0 s into the upload
+    of a 249.6 s clip): upload cancelled, service stopped 13 ms later,
+    no second alert.
+  - Recents in a live session 2.4 s into the upload of a 142.2 s clip:
+    upload cancelled, no alert, no transcript notification.
+  - No key pattern in the saved logs.
