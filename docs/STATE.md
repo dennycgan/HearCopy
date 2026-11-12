@@ -32,17 +32,21 @@ details live in DECISIONS.md.
 
 ## Phase Roadmap (Public repo)
 
-- [ ] LICENSE: the owner chooses the licence before this step starts
+- [x] Full-history privacy audit: keys, personal email, local absolute
+  paths, real device model names, private notes never committed; no
+  finding up to e779446; a finding is reported, never fixed by
+  rewriting history
+- [x] LICENSE: MIT (ffa31cc)
+- [ ] CLAUDE.md publication: reviewed for public reading, tracked and
+  added to the RepoLayoutTest root allowlist (rules edit and an ADR)
 - [ ] README: status, build, security (key storage, where the key and
   audio are sent, key guidance in three tiers), continuous capture
   disclosure, capture limits, "How this was built"
-- [ ] CLAUDE.md publication: reviewed for public reading, tracked and
-  added to the RepoLayoutTest root allowlist (rules edit and an ADR)
-- [ ] Full-history privacy audit: keys, personal email, local absolute
-  paths, real device model names, private notes never committed; a
-  finding is reported, never fixed by rewriting history
-- [ ] GitHub secret scanning and push protection (owner)
+- [ ] Audit of the commits made after the full-history audit
 - [ ] Visibility switch (owner)
+- [ ] GitHub secret scanning and push protection (owner; right after
+  the switch if not offered while private)
+- [ ] Outside check while logged out
 
 ## Known debt
 
