@@ -85,7 +85,14 @@ short clip of at least 1 second.
   the next step rebuilds them, adds settings and keeps the button's
   position across restarts.
 - There is no release APK yet; build it from source (below).
-- Transcription is English only. The language is fixed in code.
+- Tuned for English: each request tells the model to expect English.
+  OpenAI describes `gpt-transcribe` as transcribing speech in its
+  original language
+  ([speech-to-text guide](https://developers.openai.com/api/docs/guides/speech-to-text)),
+  including multilingual audio
+  ([model page](https://developers.openai.com/api/docs/models/gpt-transcribe));
+  in tests, Chinese and Japanese videos came back in Chinese and
+  Japanese despite the English hint. Only English is tested regularly.
 - Tested on an Android 10 phone (called Device-A in the docs) with TikTok
   as the audio source. An Android 11 phone is checked before V1. Minimum
   Android 10, phones in portrait.
