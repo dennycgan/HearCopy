@@ -40,13 +40,16 @@ details live in DECISIONS.md.
 - [x] CLAUDE.md publication: reviewed for public reading, tracked and
   added to the RepoLayoutTest root allowlist; .claude/ stays private
   (ADR-016) (683ee0e)
-- [ ] README: status, build, security (key storage, where the key and
+- [x] README: status, build, security (key storage, where the key and
   audio are sent, key guidance in three tiers), continuous capture
-  disclosure, capture limits, "How this was built"
-- [ ] Audit of the commits made after the full-history audit
+  disclosure, capture limits, "How this was built" (9457195)
+- [x] Audit of the commits made after the full-history audit: no
+  finding up to 9457195
 - [ ] Visibility switch (owner)
-- [ ] GitHub secret scanning and push protection (owner; right after
-  the switch if not offered while private)
+- [ ] GitHub secret scanning, push protection and private vulnerability
+  reporting (owner; right after the switch if not offered while
+  private; the README already points to private vulnerability
+  reporting)
 - [ ] Outside check while logged out
 
 ## Known debt
