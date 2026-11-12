@@ -2,7 +2,7 @@ package com.dennycgan.hearcopy.architecture
 
 import org.junit.Test
 
-/** Repo root and docs/ hold only allowlisted entries (ADR-001). */
+/** Repo root and docs/ hold only allowlisted entries (ADR-001, ADR-016). */
 class RepoLayoutTest {
 
     private val rootFiles = setOf(
@@ -16,6 +16,7 @@ class RepoLayoutTest {
         "README.md",
         "LICENSE",
         "CHANGELOG.md",
+        "CLAUDE.md",
     )
 
     private val rootDirs = setOf("gradle", "app", "docs", ".github")

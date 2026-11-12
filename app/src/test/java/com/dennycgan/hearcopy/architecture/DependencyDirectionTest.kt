@@ -5,7 +5,8 @@ import com.lemonappdev.konsist.api.declaration.KoFileDeclaration
 import org.junit.Test
 
 /**
- * Import rules 1-8 from .claude/rules/architecture.md (ADR-001).
+ * Import rules 1-8 of the architecture rules (ADR-001). The rule text is
+ * kept in the private agent rules; each test name below states its rule.
  *
  * Each rule checks both import directives and fully qualified references in
  * code (comments removed). Kotlin star imports bring in only the members of

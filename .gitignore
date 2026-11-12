@@ -1,6 +1,5 @@
 # Private, local only
 docs/private/
-CLAUDE.md
 .claude/
 
 # Gradle and build output
