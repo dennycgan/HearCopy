@@ -23,25 +23,61 @@ It is not live captioning or translation. It transcribes only the clip
 you mark, keeps only the latest transcript, and leaves the rest to
 whatever app you paste into.
 
-## At a glance
+## Tech stack
 
-- Native Android app in Kotlin: a Jetpack Compose main screen and a
-  plain-View floating button.
-- Captures other apps' audio with MediaProjection and AudioPlaybackCapture
-  in a foreground service, as 16 kHz mono WAV
-  ([ADR-004](docs/DECISIONS.md#adr-004-capture-at-48-khz-and-decimate-to-16-khz)).
-- Transcribes with OpenAI `gpt-transcribe` over OkHttp; each clip is sent
-  at most once
+| Layer | Choice |
+|---|---|
+| Language and UI | Kotlin; Jetpack Compose main screen; plain Android View for the floating button |
+| Audio capture | MediaProjection, AudioPlaybackCapture and AudioRecord in a foreground service |
+| Audio format | Captured at 48 kHz, decimated to 16 kHz mono WAV ([ADR-004](docs/DECISIONS.md#adr-004-capture-at-48-khz-and-decimate-to-16-khz)) |
+| Transcription | OpenAI `gpt-transcribe` over OkHttp |
+| State | Kotlin coroutines and StateFlow; one store with a pure reducer |
+| Local data and secrets | Jetpack DataStore; API key encrypted with an Android Keystore AES-256-GCM key |
+| Wiring | Hand-written `AppContainer`, no DI framework |
+| Verification | JUnit unit tests, OkHttp MockWebServer, Konsist architecture tests, Android lint; GitHub Actions CI with gitleaks |
+
+Versions are pinned in [gradle/libs.versions.toml](gradle/libs.versions.toml).
+
+## Architecture
+
+Paths are relative to the package root `com.dennycgan.hearcopy`.
+
+| Layer | Path | Role |
+|---|---|---|
+| State | `state/` | `CaptureStateStore`: one StateFlow, changed only by the pure `reduce(state, event)` |
+| Capture | `capture/` | `CaptureService` runs the session; `PlaybackCaptureSource` records; `TranscriptionRun` drives each upload; `CaptureCommands` is the way in |
+| Overlay | `overlay/` | `HearCopyTouch`: the floating button, a plain View |
+| Transcription | `transcription/` | `TranscriptionClient`: one upload per clip to `gpt-transcribe` |
+| Data | `data/` | `SettingsRepository` (encrypted API key), `TranscriptRepository` (latest transcript) |
+| Notifications | `notify/` | `CaptureNotifications`: session, alert and transcription notifications |
+| UI | `ui/` | `MainActivity` and `SetupScreen`: the temporary main screen (setup steps, latest transcript) |
+| Wiring | `AppContainer.kt` | Builds the app-wide objects and wires them; created by `HearCopyApplication` |
+
+`DependencyDirectionTest` enforces the import direction. `state/` is pure
+Kotlin, with no Android imports. `ui/` and `overlay/` read state from
+`state/` and reach `capture/` only through `CaptureCommands`, never
+`transcription/`. `transcription/` does not import `capture/`, `overlay/`
+or `ui/`. Only `data/` touches the Keystore and DataStore. The state
+store, capture source, transcription client and settings repository are
+built only in `AppContainer`. The reasons are in
+[docs/DECISIONS.md](docs/DECISIONS.md).
+
+## Engineering highlights
+
+- Each clip is sent at most once, with no automatic retry
   ([ADR-012](docs/DECISIONS.md#adr-012-the-transcription-client-sends-each-clip-at-most-once)).
-- Bring your own OpenAI key, encrypted with an Android Keystore AES-GCM
-  key
+- Capture runs for the whole session, because starting it on each tap
+  muted the speaker for about 2 seconds on the test phone
+  ([ADR-005](docs/DECISIONS.md#adr-005-continuous-playback-capture-during-a-session)).
+- You bring your own OpenAI key; it is encrypted with a non-exportable
+  Android Keystore key
   ([ADR-013](docs/DECISIONS.md#adr-013-api-key-encrypted-with-a-keystore-aes-gcm-key-in-datastore)).
-- One state store with a pure reducer; architecture rules enforced by
-  guard tests
+- Guard tests enforce the architecture
   ([ADR-001](docs/DECISIONS.md#adr-001-guard-tests-and-decisions-are-the-architecture-of-record));
-  CI with a full-history gitleaks scan
+  CI runs a full-history gitleaks scan with every action pinned by commit
+  SHA
   ([ADR-002](docs/DECISIONS.md#adr-002-ci-with-pinned-tools-and-one-shared-commit-message-check)).
-- Built with Claude Code under owner review
+- Built with Claude Code as the coding agent, under owner review
   ([How this was built](#how-this-was-built)).
 
 ## Using it
@@ -251,13 +287,13 @@ before any code is written. Decisions that bind later work are recorded
 as ADRs in [docs/DECISIONS.md](docs/DECISIONS.md);
 [docs/STATE.md](docs/STATE.md) is the current snapshot and
 [docs/PHASE_HISTORY.md](docs/PHASE_HISTORY.md) the record of closed Caps.
-Guard tests enforce the architecture: package layout, import direction,
-a closed dependency allowlist, the manifest, where UI text and colours
-may live, the repository layout and an English-only check. CI runs the
-build, all tests and lint, a full-history gitleaks secret scan and the
-commit check, with every action pinned by commit SHA. The agent can
-build, install and read device logs but cannot see or hear the phone, so
-the owner accepts every phase on a real device.
+Besides the import rules in [Architecture](#architecture), guard tests
+check the package and repository layout, a closed dependency allowlist,
+the manifest, where UI text and colours may live, and that tracked files
+are English only. CI runs the build, all tests and lint, a full-history
+gitleaks secret scan and the commit check, with every action pinned by
+commit SHA. The agent can build, install and read device logs but cannot
+see or hear the phone, so the owner accepts every phase on a real device.
 
 HearCopy is not affiliated with OpenAI or TikTok.
 
