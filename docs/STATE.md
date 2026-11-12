@@ -8,12 +8,8 @@ details live in DECISIONS.md.
 - [x] Cap 0 Foundation
 - [x] Cap 1 Capture session + hearcopyTouch
 - [x] Cap 2 Transcription loop
-- [ ] Public repo  <- YOU ARE HERE
-  - README discloses continuous playback capture during an active
-    session; only audio after a tap is kept.
-  - README lists which apps cannot be captured and why; the check is to
-    try a short clip.
-- [ ] Cap 3 Main UI, settings and lifecycle completion
+- [x] Public repo
+- [ ] Cap 3 Main UI, settings and lifecycle completion  <- YOU ARE HERE
   - Persist the hearcopyTouch position (DataStore, data/). The overlay
     reads and writes it only through state/ and CaptureCommands (Rule 4),
     never overlay -> data/.
@@ -30,27 +26,10 @@ details live in DECISIONS.md.
   - Keep or remove the debug-only WAV retention (debug builds keep the
     last three valid clips).
 
-## Phase Roadmap (Public repo)
+## Phase Roadmap (Cap 3)
 
-- [x] Full-history privacy audit: keys, personal email, local absolute
-  paths, real device model names, private notes never committed; no
-  finding up to e779446; a finding is reported, never fixed by
-  rewriting history
-- [x] LICENSE: MIT (ffa31cc)
-- [x] CLAUDE.md publication: reviewed for public reading, tracked and
-  added to the RepoLayoutTest root allowlist; .claude/ stays private
-  (ADR-016) (683ee0e)
-- [x] README: status, build, security (key storage, where the key and
-  audio are sent, key guidance in three tiers), continuous capture
-  disclosure, capture limits, "How this was built" (9457195)
-- [x] Audit of the commits made after the full-history audit: no
-  finding up to 9457195
-- [ ] Visibility switch (owner)
-- [ ] GitHub secret scanning, push protection and private vulnerability
-  reporting (owner; right after the switch if not offered while
-  private; the README already points to private vulnerability
-  reporting)
-- [ ] Outside check while logged out
+- Cap 3 is not scoped yet. Its phases are written here once the owner
+  approves the Cap 3 design.
 
 ## Known debt
 

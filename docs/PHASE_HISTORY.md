@@ -1,6 +1,6 @@
 # HearCopy Phase History
 
-Archive of each closed Cap's phases. Append only.
+Archive of the phases of each closed Cap or roadmap step. Append only.
 
 ## Cap 0: Foundation (2026-11-08)
 
@@ -55,3 +55,23 @@ Archive of each closed Cap's phases. Append only.
 - [x] 2.5 Lifecycle with a transcription in flight: SessionLost,
   deferred stop, Recents cancel, consent after the deferred stop
   (ADR-015) (8ed5559)
+
+## Public repo (2026-11-12)
+
+- [x] Full-history privacy audit: keys, personal email, local absolute
+  paths, real device model names, private notes never committed; no
+  finding up to e779446
+- [x] LICENSE: MIT (ffa31cc)
+- [x] CLAUDE.md publication: reviewed for public reading, tracked and
+  added to the RepoLayoutTest root allowlist; .claude/ stays private
+  (ADR-016) (683ee0e)
+- [x] README: status, build, security (key storage, where the key and
+  audio are sent, key guidance in three tiers), continuous capture
+  disclosure, capture limits, "How this was built" (9457195, 0011dd3,
+  fb4e854)
+- [x] Audit of the commits made after the full-history audit: no
+  finding up to fb4e854
+- [x] Visibility switch (owner)
+- [x] GitHub secret scanning, push protection and private vulnerability
+  reporting (owner)
+- [x] Outside check while logged out (owner)
