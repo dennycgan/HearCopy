@@ -744,3 +744,42 @@ native rates.
   - Recents in a live session 2.4 s into the upload of a 142.2 s clip:
     upload cancelled, no alert, no transcript notification.
   - No key pattern in the saved logs.
+
+## ADR-016: CLAUDE.md is published; the agent rules stay private
+> CLAUDE.md is tracked at the repo root so public readers see how the agent is instructed, while .claude/ and docs/private/ stay ignored, and every later CLAUDE.md edit needs both the rules-edit approval and a normal commit.
+- Status: Accepted (2026-11-12)
+- Anchor: 683ee0e
+### Context
+- The repository is going public. CLAUDE.md instructs the coding agent
+  and shows how the project is built; it was gitignored with .claude/
+  and docs/private/.
+- RepoLayoutTest allowlists root files (ADR-001); CLAUDE.md was not on
+  the list.
+- CLAUDE.md names private files (the product spec, Cap design notes, the
+  device codename map, the rules under .claude/rules/).
+- Owner decision 2026-11-12: publish CLAUDE.md only; .claude/, rules
+  included, stays private.
+### Decision
+- CLAUDE.md is tracked at the repo root and added to the RepoLayoutTest
+  root allowlist; .gitignore stops ignoring it. .claude/ and
+  docs/private/ stay ignored.
+- No new assertion for .claude/: it is not an allowlisted root
+  directory, so RepoLayoutTest already fails on any file under it.
+  docs/private/ keeps its own test.
+- CLAUDE.md names private files by path and says they are private; it
+  copies no content from them. The privacy rules for committed files
+  apply to it.
+- A later CLAUDE.md edit needs "Approved: rules edit." and then the
+  two-step git gate as its own commit. Edits to .claude/rules/ need only
+  the rules-edit approval and are never committed.
+- Rejected: publishing .claude/rules/ (owner decision; the README
+  summarises the rules in prose without quoting them); keeping
+  CLAUDE.md private (the build method is part of the portfolio); a
+  separate public copy of the agent instructions (two copies drift).
+### Consequences
+- CLAUDE.md is checked by LanguageTest, gitleaks and the post-audit
+  check like any tracked file.
+- Public readers see references to files they cannot open; CLAUDE.md
+  states this.
+- Changes to .claude/rules/ leave no git history; CLAUDE.md's one-line
+  summaries can drift from them, so a rules edit updates both together.

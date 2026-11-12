@@ -37,8 +37,9 @@ details live in DECISIONS.md.
   finding up to e779446; a finding is reported, never fixed by
   rewriting history
 - [x] LICENSE: MIT (ffa31cc)
-- [ ] CLAUDE.md publication: reviewed for public reading, tracked and
-  added to the RepoLayoutTest root allowlist (rules edit and an ADR)
+- [x] CLAUDE.md publication: reviewed for public reading, tracked and
+  added to the RepoLayoutTest root allowlist; .claude/ stays private
+  (ADR-016) (683ee0e)
 - [ ] README: status, build, security (key storage, where the key and
   audio are sent, key guidance in three tiers), continuous capture
   disclosure, capture limits, "How this was built"
