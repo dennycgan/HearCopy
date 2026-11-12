@@ -37,6 +37,7 @@ import com.dennycgan.hearcopy.state.CaptureState
 import com.dennycgan.hearcopy.state.CaptureStatus
 import com.dennycgan.hearcopy.state.FailureReason
 import com.dennycgan.hearcopy.state.Setup
+import com.dennycgan.hearcopy.state.isFinishing
 import kotlinx.coroutines.launch
 
 /**
@@ -103,8 +104,10 @@ fun SetupScreen(
                 Text(text = stringResource(R.string.setup_overlay_hint), style = MaterialTheme.typography.bodyMedium)
             }
             // Never hidden while a session is starting: if the service fails,
-            // this button is the way out.
-            actionLabel(nextStep)?.let { label ->
+            // this button is the way out. Hidden at the consent step while the
+            // last upload finishes: the ending service would ignore the start.
+            val holdConsent = nextStep == SetupStep.Consent && isFinishing(state)
+            actionLabel(nextStep)?.takeUnless { holdConsent }?.let { label ->
                 Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) {
                     Text(text = stringResource(label))
                 }
@@ -185,6 +188,7 @@ private fun keyMessage(message: KeyMessage): Int = when (message) {
 @StringRes
 private fun statusLine(state: CaptureState, step: SetupStep, declined: Boolean, awaitingSession: Boolean): Int = when {
     awaitingSession -> R.string.status_starting
+    isFinishing(state) -> R.string.status_finishing
     declined -> R.string.status_declined
     step != SetupStep.Done -> R.string.status_setup
     else -> when (val status = state.status) {

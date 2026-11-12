@@ -8,6 +8,7 @@ import com.dennycgan.hearcopy.state.CaptureEvent.LimitReached
 import com.dennycgan.hearcopy.state.CaptureEvent.PermissionsReported
 import com.dennycgan.hearcopy.state.CaptureEvent.PreparingTimedOut
 import com.dennycgan.hearcopy.state.CaptureEvent.SessionEnded
+import com.dennycgan.hearcopy.state.CaptureEvent.SessionLost
 import com.dennycgan.hearcopy.state.CaptureEvent.SessionStarted
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStart
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStop
@@ -52,6 +53,10 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
         status = Ready,
         attempt = state.attempt + 1,
     )
+
+    // The upload in flight keeps its attempt and Processing status, so its
+    // outcome still lands; only the session is gone.
+    SessionLost -> state.copy(setup = state.setup.copy(projectionActive = false))
 
     // Gated only on the session: the reported RECORD_AUDIO value may be
     // stale, so the service checks the permission itself at tap time.
@@ -113,6 +118,15 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
     // A transcript received in this process is newer than the stored one.
     is TranscriptRestored -> if (state.lastTranscript == null) state.copy(lastTranscript = event.text) else state
 }
+
+/**
+ * The session was lost during an upload and the service has not ended yet:
+ * between [CaptureEvent.SessionLost] and [CaptureEvent.SessionEnded]. No
+ * other state has no session and a status other than Ready: TapStart needs
+ * the session, and SessionEnded always returns to Ready.
+ */
+fun isFinishing(state: CaptureState): Boolean =
+    !state.setup.projectionActive && state.status != Ready
 
 private inline fun CaptureState.forAttempt(
     attempt: Int,

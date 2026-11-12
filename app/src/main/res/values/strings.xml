@@ -26,6 +26,7 @@
     <string name="status_setup">Complete the steps above to start.</string>
     <string name="status_declined">A step was not allowed. Use the button to try again.</string>
     <string name="status_starting">Starting the capture session…</string>
+    <string name="status_finishing">Finishing the last transcription…</string>
     <string name="status_ready">Ready. Tap the floating button to capture audio.</string>
     <string name="status_preparing">Starting capture…</string>
     <string name="status_recording">Capturing audio. Tap the floating button to stop.</string>
@@ -61,6 +62,7 @@
     <string name="channel_alerts_name">Alerts</string>
     <string name="notification_session_title">HearCopy is ready</string>
     <string name="notification_session_text">Tap the floating button to capture audio.</string>
+    <string name="notification_session_finishing_title">Finishing the last transcription</string>
     <string name="notification_lost_title">Audio capture stopped</string>
     <string name="notification_lost_text">The floating button is gone. Tap to open HearCopy and start again.</string>
     <string name="notification_key_unreadable_text">The saved API key can no longer be read. Tap to open HearCopy and enter it again.</string>

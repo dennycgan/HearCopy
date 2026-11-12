@@ -46,28 +46,53 @@ class CaptureService : Service(), CaptureSessionHandle {
     /**
      * Why the session ends. [postsAlert]: the user did not end the session
      * and may be in another app when the button disappears.
+     * [defersUpload]: only capture authorisation is gone, so an upload in
+     * flight is allowed to finish before the service stops (ADR-015).
      */
-    enum class TeardownReason(val postsAlert: Boolean) {
+    enum class TeardownReason(val postsAlert: Boolean, val defersUpload: Boolean) {
         /** HearCopy was removed from Recents. */
-        UserEnded(false),
+        UserEnded(false, false),
 
         /** The projection was stopped from outside (another capture, the system). */
-        ProjectionLost(true),
+        ProjectionLost(true, true),
 
         /** RECORD_AUDIO or the overlay permission is missing. */
-        PermissionLost(true),
+        PermissionLost(true, true),
 
         /** The continuous capture could not start or gave up (ADR-005). */
-        CaptureLost(true),
+        CaptureLost(true, true),
 
         /** Our own safety net, or a rejected consent result with HearCopy in front. */
-        Internal(false),
+        Internal(false, false),
 
         /** The user deleted the API key on the main screen. */
-        KeyRemoved(false),
+        KeyRemoved(false, false),
 
         /** The stored key can never be read again; found right before an upload. */
-        KeyUnreadable(true),
+        KeyUnreadable(true, false),
+        ;
+
+        /** What this ending does in [phase], with or without an upload in flight. */
+        fun planFor(phase: Phase, uploadInFlight: Boolean): EndingPlan = when (phase) {
+            Phase.Ended -> EndingPlan.Ignore
+            // The callback, the watcher and the loop are already gone, so a
+            // deferring reason cannot arrive; anything else ends the wait.
+            Phase.Deferred -> if (defersUpload) EndingPlan.Ignore else EndingPlan.StopNow
+            Phase.Live -> if (uploadInFlight && defersUpload) EndingPlan.Defer else EndingPlan.StopNow
+        }
+    }
+
+    /** Live: a session is running. Deferred: ended, waiting for the upload. Ended: stopping. */
+    enum class Phase { Live, Deferred, Ended }
+
+    enum class EndingPlan {
+        /** Cancel any upload and stop the service now. */
+        StopNow,
+
+        /** End the session now; stop the service once the upload ends. */
+        Defer,
+
+        Ignore,
     }
 
     private val container by lazy { (application as HearCopyApplication).container }
@@ -85,10 +110,12 @@ class CaptureService : Service(), CaptureSessionHandle {
     private var overlayWatcher: AppOpsManager.OnOpChangedListener? = null
 
     /**
-     * Set first thing in [teardown] and never cleared: an instance is not
-     * reused after a teardown, so any later teardown call does nothing.
+     * Leaves [Phase.Live] first thing in [teardown] and never returns: an
+     * instance is not reused after a teardown. In [Phase.Deferred] only an
+     * ending that cancels the upload still acts.
      */
-    private var stopping = false
+    private var phase = Phase.Live
+    private val stopping: Boolean get() = phase != Phase.Live
 
     /** Main-thread handler for the projection callback and the overlay re-check. */
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -328,13 +355,48 @@ class CaptureService : Service(), CaptureSessionHandle {
     }
 
     /**
-     * Ends the session. Main thread only: a callback or re-check posted
-     * meanwhile runs after it and stops at [stopping].
+     * Ends the session (ADR-007, ADR-015). Main thread only: a callback or
+     * re-check posted meanwhile runs after it and stops at [stopping].
+     *
+     * A lost authorisation with an upload in flight ends the session at once
+     * but keeps the service, in the foreground, until the upload ends. In
+     * that window Recents, a key delete or onDestroy cancels the upload and
+     * stops at once, without a second alert.
      */
     private fun teardown(reason: TeardownReason) {
-        if (stopping) return
-        stopping = true
-        log("teardown reason=$reason alert=${reason.postsAlert} at=${SystemClock.elapsedRealtime()}")
+        val upload = transcription
+        val plan = reason.planFor(phase, uploadInFlight = upload != null)
+        if (plan == EndingPlan.Ignore) return
+        val wasLive = phase == Phase.Live
+        phase = if (plan == EndingPlan.Defer) Phase.Deferred else Phase.Ended
+        log("teardown reason=$reason alert=${reason.postsAlert && wasLive} plan=$plan at=${SystemClock.elapsedRealtime()}")
+        if (wasLive) endSession(reason)
+        if (plan == EndingPlan.Defer && upload != null) {
+            store.dispatch(CaptureEvent.SessionLost)
+            container.notifications.showSessionFinishing()
+            log("teardown deferred: upload in flight")
+            scope.launch {
+                upload.join()
+                // A cancelling ending in the window has already stopped.
+                if (phase != Phase.Deferred) return@launch
+                phase = Phase.Ended
+                log("deferred stop: upload ended")
+                finishStop()
+            }
+            return
+        }
+        // The upload's notification goes with it. The run deletes its clip.
+        transcription?.let {
+            log(if (wasLive) "teardown: cancelling the upload" else "teardown: cancelling the upload in the deferred window")
+            it.cancel()
+            container.notifications.cancelTranscript()
+        }
+        transcription = null
+        finishStop()
+    }
+
+    /** Button, recording, capture loop, alert and projection: everything but the upload. */
+    private fun endSession(reason: TeardownReason) {
         stopWatchingOverlayPermission()
         overlay?.hide()
         overlay = null
@@ -342,14 +404,6 @@ class CaptureService : Service(), CaptureSessionHandle {
         // The reader deletes the cancelled clip's temp file when it detaches it.
         session?.cancel()
         session = null
-        // Until the in-flight lifecycle (phase 2.5), every ending cancels the
-        // upload; its notification goes with it. The run deletes its clip.
-        transcription?.let {
-            log("teardown: cancelling the upload")
-            it.cancel()
-            container.notifications.cancelTranscript()
-        }
-        transcription = null
         loop?.close()
         loop = null
         // Own notification id, so removing the foreground notification keeps it.
@@ -363,6 +417,10 @@ class CaptureService : Service(), CaptureSessionHandle {
             it.stop()
         }
         projection = null
+    }
+
+    /** SessionEnded right before stopSelf: the main screen's hold ends with it. */
+    private fun finishStop() {
         store.dispatch(CaptureEvent.SessionEnded)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

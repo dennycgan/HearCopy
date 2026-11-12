@@ -13,8 +13,19 @@ sealed interface CaptureEvent {
     /** The service holds a valid capture consent. Sets only projectionActive. */
     data object SessionStarted : CaptureEvent
 
-    /** The capture session is over; anything in flight is cancelled. */
+    /**
+     * The capture service has ended. Anything still in flight was cancelled,
+     * or (after [SessionLost]) has finished.
+     */
     data object SessionEnded : CaptureEvent
+
+    /**
+     * Capture authorisation was lost while an upload is in flight. The
+     * service stays until the upload ends, then reports [SessionEnded].
+     * Sets only projectionActive; the attempt keeps its status so the
+     * upload's outcome still applies.
+     */
+    data object SessionLost : CaptureEvent
 
     data object TapStart : CaptureEvent
 

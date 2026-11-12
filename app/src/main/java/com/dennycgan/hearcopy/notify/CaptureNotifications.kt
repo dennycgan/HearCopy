@@ -49,6 +49,21 @@ class CaptureNotifications(private val context: Context) {
             .build()
 
     /**
+     * The session is gone but the service waits for the last upload
+     * (ADR-015): the foreground notification is replaced in place, so it no
+     * longer offers the floating button. Low channel, so it is silent.
+     */
+    fun showSessionFinishing() {
+        val finishing = Notification.Builder(context, CHANNEL_SESSION)
+            .setSmallIcon(R.drawable.ic_stat_capture)
+            .setContentTitle(context.getString(R.string.notification_session_finishing_title))
+            .setOngoing(true)
+            .setShowWhen(false)
+            .build()
+        manager.notify(SESSION_NOTIFICATION_ID, finishing)
+    }
+
+    /**
      * The session ended without the user ending it. Tapping opens the main
      * screen through the launcher intent, so the single instance receives
      * it in `onNewIntent`; the extra marks it as coming from this alert.

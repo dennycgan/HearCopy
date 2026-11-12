@@ -8,6 +8,7 @@ import com.dennycgan.hearcopy.state.CaptureEvent.LimitReached
 import com.dennycgan.hearcopy.state.CaptureEvent.PermissionsReported
 import com.dennycgan.hearcopy.state.CaptureEvent.PreparingTimedOut
 import com.dennycgan.hearcopy.state.CaptureEvent.SessionEnded
+import com.dennycgan.hearcopy.state.CaptureEvent.SessionLost
 import com.dennycgan.hearcopy.state.CaptureEvent.SessionStarted
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStart
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStop
@@ -413,5 +414,63 @@ class ReduceTest {
         )
         printed.forEach { assertFalse(it, it.contains("private")) }
         assertTrue(printed[0].contains("length=${text.length}"))
+    }
+
+    // Lost session with an upload in flight (ADR-015)
+
+    @Test
+    fun `SessionLost clears only projectionActive and keeps status, attempt and transcript`() {
+        allStatuses.forEach { status ->
+            val before = state(status, attempt = 3).copy(lastTranscript = "old")
+            val after = reduce(before, SessionLost)
+            assertEquals("from $status", before.copy(setup = before.setup.copy(projectionActive = false)), after)
+        }
+    }
+
+    @Test
+    fun `SessionLost twice is the same as once`() {
+        val once = reduce(state(Processing), SessionLost)
+        assertEquals(once, reduce(once, SessionLost))
+    }
+
+    @Test
+    fun `after SessionLost the upload outcome still applies and taps do nothing`() {
+        val lost = reduce(state(Processing, attempt = 3), SessionLost)
+        assertSame(lost, reduce(lost, TapStart))
+        val ready = reduce(lost, TranscriptReady(3, "new"))
+        assertEquals(Completed, ready.status)
+        assertEquals("new", ready.lastTranscript)
+        assertEquals(Failed(FailureReason.Network), reduce(lost, TranscriptionFailed(3, FailureReason.Network)).status)
+    }
+
+    @Test
+    fun `SessionEnded after SessionLost returns to Ready and drops late events`() {
+        val done = reduce(reduce(state(Processing, attempt = 3), SessionLost), TranscriptReady(3, "new"))
+        val ended = reduce(done, SessionEnded)
+        assertEquals(CaptureState(session.copy(projectionActive = false), Ready, attempt = 4, lastTranscript = "new"), ended)
+        assertSame(ended, reduce(ended, TranscriptionFailed(3, FailureReason.Network)))
+    }
+
+    @Test
+    fun `finishing lasts from SessionLost until SessionEnded, whatever the upload outcome`() {
+        val live = state(Processing, attempt = 3)
+        assertFalse(isFinishing(live))
+        val lost = reduce(live, SessionLost)
+        assertTrue(isFinishing(lost))
+        listOf(TranscriptReady(3, "new"), TranscriptionFailed(3, FailureReason.Timeout)).forEach { outcome ->
+            val done = reduce(lost, outcome)
+            assertTrue("$outcome", isFinishing(done))
+            assertFalse("$outcome", isFinishing(reduce(done, SessionEnded)))
+        }
+        assertFalse(isFinishing(reduce(lost, SessionEnded)))
+    }
+
+    @Test
+    fun `no state is finishing without a SessionLost`() {
+        assertFalse(isFinishing(CaptureState()))
+        (allStatuses + Completed).forEach { status ->
+            assertFalse("live $status", isFinishing(state(status)))
+            assertFalse("ended $status", isFinishing(reduce(state(status), SessionEnded)))
+        }
     }
 }

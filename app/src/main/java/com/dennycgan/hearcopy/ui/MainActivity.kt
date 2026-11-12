@@ -21,6 +21,7 @@ import androidx.lifecycle.Lifecycle
 import com.dennycgan.hearcopy.HearCopyApplication
 import com.dennycgan.hearcopy.capture.CaptureCommands.KeyDeleteResult
 import com.dennycgan.hearcopy.capture.CaptureCommands.KeySaveResult
+import com.dennycgan.hearcopy.state.isFinishing
 import com.dennycgan.hearcopy.ui.theme.HearCopyTheme
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -77,6 +78,14 @@ class MainActivity : ComponentActivity() {
      * one that advance() already saw does not advance twice.
      */
     private var keySeenPresent = false
+
+    /**
+     * isFinishing as last seen by advance() or the state collector. While
+     * the last upload finishes after a lost session, the consent step is
+     * held (ADR-015); when it ends, the collector continues the setup once
+     * if this screen is resumed, otherwise the next onResume does.
+     */
+    private var finishingSeen = false
 
     /** Lives from onCreate to onDestroy, so it also runs while in the background. */
     private val uiScope = MainScope()
@@ -136,7 +145,10 @@ class MainActivity : ComponentActivity() {
                 val keyPresent = it.setup.apiKeyPresent == true
                 val becamePresent = keyPresent && !keySeenPresent
                 keySeenPresent = keyPresent
-                if (becamePresent && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) advance()
+                val finishing = isFinishing(it)
+                val finishingEnded = finishingSeen && !finishing
+                finishingSeen = finishing
+                if ((becamePresent || finishingEnded) && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) advance()
             }
         }
         uiScope.launch { keyHint = container.captureCommands.refreshApiKey() }
@@ -193,8 +205,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun advance() {
-        keySeenPresent = container.store.state.value.setup.apiKeyPresent == true
-        if (container.store.state.value.setup.projectionActive) awaitingSession = false
+        val state = container.store.state.value
+        keySeenPresent = state.setup.apiKeyPresent == true
+        finishingSeen = isFinishing(state)
+        if (state.setup.projectionActive) awaitingSession = false
         if (declined || inFlight) return
         if (shouldAskNotifications()) {
             notificationsAsked = true
@@ -202,8 +216,9 @@ class MainActivity : ComponentActivity() {
             notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
         }
-        val step = nextStep(container.store.state.value.setup)
-        if (step == SetupStep.Consent && awaitingSession) return
+        val step = nextStep(state.setup)
+        // The ending service would ignore a start; the collector continues once it has ended.
+        if (step == SetupStep.Consent && (awaitingSession || finishingSeen)) return
         launch(step)
     }
 
