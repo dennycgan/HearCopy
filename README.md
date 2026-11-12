@@ -1,10 +1,82 @@
 # HearCopy
 
-HearCopy is an Android app that turns a few seconds of audio playing on
-your phone into text you can select and copy. A floating button,
-hearcopyTouch, sits over other apps (for example TikTok): tap it to start,
-tap it again to stop, and the clip is transcribed by OpenAI
-`gpt-transcribe`.
+*Catch what you just heard.*
+
+HearCopy is an Android app that turns a short stretch of audio playing on
+your phone into text you can select and copy.
+
+## Why
+
+Something in a video or podcast goes by and you want it as text: a line
+you did not quite catch, slang or a term to look up, a name, title or
+number to search, or a quote worth keeping. Often you simply want to
+look up what you heard: a product, a place, a song, a claim to check.
+Subtitles, where there are any, usually cannot be selected, so the usual
+workarounds are a screenshot and OCR, pausing to type it out, or
+replaying until you can make out the words.
+
+HearCopy turns that into a few taps. What you do with the text is up to
+you: search it, translate it, paste it into a dictionary or an AI chat,
+or keep it.
+
+It is not live captioning or translation. It transcribes only the clip
+you mark, keeps only the latest transcript, and leaves the rest to
+whatever app you paste into.
+
+## At a glance
+
+- Native Android app in Kotlin: a Jetpack Compose main screen and a
+  plain-View floating button.
+- Captures other apps' audio with MediaProjection and AudioPlaybackCapture
+  in a foreground service, as 16 kHz mono WAV
+  ([ADR-004](docs/DECISIONS.md#adr-004-capture-at-48-khz-and-decimate-to-16-khz)).
+- Transcribes with OpenAI `gpt-transcribe` over OkHttp; each clip is sent
+  at most once
+  ([ADR-012](docs/DECISIONS.md#adr-012-the-transcription-client-sends-each-clip-at-most-once)).
+- Bring your own OpenAI key, encrypted with an Android Keystore AES-GCM
+  key
+  ([ADR-013](docs/DECISIONS.md#adr-013-api-key-encrypted-with-a-keystore-aes-gcm-key-in-datastore)).
+- One state store with a pure reducer; architecture rules enforced by
+  guard tests
+  ([ADR-001](docs/DECISIONS.md#adr-001-guard-tests-and-decisions-are-the-architecture-of-record));
+  CI with a full-history gitleaks scan
+  ([ADR-002](docs/DECISIONS.md#adr-002-ci-with-pinned-tools-and-one-shared-commit-message-check)).
+- Built with Claude Code under owner review
+  ([How this was built](#how-this-was-built)).
+
+## Using it
+
+A floating button, hearcopyTouch, sits over other apps (for example
+TikTok) while a capture session is active.
+
+1. Tap hearcopyTouch when you hear something you want. Nothing changes
+   until audio is actually being captured; then the button shows a
+   square and a running timer.
+2. Drag the video back a little and let that part play again. A clip
+   starts at your tap, so the part you want has to play after it.
+3. Tap again to stop. While the clip is transcribed, a ring turns around
+   the button and it does not take new taps. When the notification says
+   "Transcription complete", tap it to open HearCopy.
+4. Select the words you need in the transcript, or use Copy all.
+
+- A clip shorter than 1 second is discarded without an upload; a
+  recording stops by itself at 5 minutes.
+- If a clip fails, the notification and HearCopy's main screen say why.
+- The latest transcript stays on the main screen until the next one
+  replaces it, also across restarts; a failure does not clear it.
+- To end the session, remove HearCopy from Recents: this also cancels an
+  upload in progress, and a result that arrives later is dropped.
+
+## Which apps can be captured
+
+Android only lets HearCopy capture audio that the playing app allows.
+Audio is left out when the app targets Android 9 or lower without opting
+in, when it sets a policy that blocks capture, or when it plays audio as
+something other than media, game or unknown. Left-out audio records as
+silence, so HearCopy reports that no audio was heard; it cannot tell a
+blocked app from a silent one. TikTok works; the test phone's built-in
+gallery app does not. To check an app, play something and record a
+short clip of at least 1 second.
 
 ## Status
 
@@ -20,36 +92,26 @@ tap it again to stop, and the clip is transcribed by OpenAI
 - You need your own OpenAI API key. Every transcription is billed to your
   OpenAI account.
 
-## How it works
+## Setup
 
-Open HearCopy, save your key, and allow what it asks for: recording
-audio, showing over other apps, notifications, and Android's
-screen-capture consent, which Android requires for capturing the audio
-other apps play. The session then starts and hearcopyTouch appears. Tap
-it to start a recording and tap again to stop. A clip shorter than 1
-second is discarded without an upload; a recording stops by itself at 5
-minutes. Each clip is uploaded once. The transcript appears on HearCopy's
-main screen, and a notification says when it is ready or why it failed;
-the notification never contains the transcript. The last transcript is
-kept until the next one replaces it, also across restarts. To end the
-session, remove HearCopy from Recents: this also cancels an upload in
-progress, and a result that arrives later is dropped.
+Open HearCopy. The "Set up HearCopy" screen asks for one thing at a
+time:
 
-## Build from source
+1. OpenAI API key: paste it and tap Save key (read Security and privacy
+   below before you create one).
+2. Display over other apps: Android opens its settings; find HearCopy,
+   allow it, and come back.
+3. Microphone: Android requires this permission for capturing the audio
+   other apps play. HearCopy captures playback only, never the
+   microphone.
+4. Audio capture: Android's screen-capture consent, which it requires for
+   capturing the audio other apps play.
 
-You need JDK 25 and the Android SDK with platform 37 (Android Studio
-provides both). The Gradle wrapper is included.
-
-```
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-./gradlew test
-```
-
-`./gradlew test` runs the unit and architecture tests. A debug build
-keeps the last three uploaded clips in HearCopy's private storage for
-listening checks; release builds keep none. There is no release signing
-setup yet.
+On Android 13 and later HearCopy also asks to show notifications. When
+the steps are done, the capture session starts, hearcopyTouch appears,
+and a "HearCopy is ready" notification stays for the whole session.
+After a session ends, the next one asks for the audio capture consent
+again.
 
 ## Security and privacy
 
@@ -100,6 +162,23 @@ phone.
   cancellation; leftovers from a crash are removed at the next start.
 - Only the last transcript is kept, unencrypted, in HearCopy's private
   storage, excluded from backup. It is never synced anywhere.
+  Notifications never contain the transcript.
+
+### Continuous capture during a session
+
+While a session is active (hearcopyTouch is on screen), playback capture
+runs all the time, not only after a tap. This is a deliberate trade-off:
+on the test phone, every start of a playback capture muted the speaker
+for about 2 seconds, so starting it on each tap would cut out what you
+are listening to.
+
+- Audio that is not part of a clip is discarded as soon as it is read;
+  nothing of it is stored or sent.
+- The cost: one short mute when a session starts, heard only if
+  something is playing, and the phone stays awake during a session. The
+  battery cost has not been measured.
+- HearCopy shows a notification for the whole session. To end it, remove
+  HearCopy from Recents.
 
 ### Limiting what a leaked key can cost
 
@@ -133,35 +212,21 @@ change.
 Report security issues privately through GitHub's private vulnerability
 reporting.
 
-## Continuous capture during a session
+## Build from source
 
-While a session is active (hearcopyTouch is on screen), playback capture
-runs all the time, not only after a tap. This is a deliberate trade-off:
-on the test phone, every start of a playback capture muted the speaker
-for about 2 seconds, so starting it on each tap would cut out what you
-are listening to.
+You need JDK 25 and the Android SDK with platform 37 (Android Studio
+provides both). The Gradle wrapper is included.
 
-- Audio that is not part of a clip is discarded as soon as it is read;
-  nothing of it is stored or sent.
-- A clip holds the audio from the tap to the stop, plus up to the
-  capture backlog before the tap (at most 400 ms; 0 ms measured on
-  Device-A) and up to about 100 ms after the stop.
-- The cost: one short mute when a session starts, heard only if
-  something is playing, and the phone stays awake during a session. The
-  battery cost has not been measured.
-- HearCopy shows a notification for the whole session. To end it, remove
-  HearCopy from Recents.
+```
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew test
+```
 
-## Which apps can be captured
-
-Android only lets HearCopy capture audio that the playing app allows.
-Audio is left out when the app targets Android 9 or lower without opting
-in, when it sets a policy that blocks capture, or when it plays audio as
-something other than media, game or unknown. Left-out audio records as
-silence, so HearCopy reports that no audio was heard; it cannot tell a
-blocked app from a silent one. TikTok works; the test phone's built-in
-gallery app does not. To check an app, play something and record a
-short clip of at least 1 second.
+`./gradlew test` runs the unit and architecture tests. A debug build
+keeps the last three uploaded clips in HearCopy's private storage for
+listening checks; release builds keep none. There is no release signing
+setup yet.
 
 ## How this was built
 
