@@ -132,7 +132,9 @@ class CaptureNotifications(private val context: Context) {
             .setAutoCancel(autoCancel)
         // Own request code: the alert's PendingIntent has the same launcher
         // intent, and FLAG_UPDATE_CURRENT would otherwise share its extras.
+        // The extra brings the main screen to the front (opensMain).
         context.packageManager.getLaunchIntentForPackage(context.packageName)?.let { launch ->
+            launch.putExtra(EXTRA_FROM_TRANSCRIPT, true)
             builder.setContentIntent(
                 PendingIntent.getActivity(
                     context,
@@ -148,6 +150,10 @@ class CaptureNotifications(private val context: Context) {
     /** Whether [intent] was started by tapping the authorisation-lost alert. */
     fun isAlertIntent(intent: Intent?): Boolean = intent?.getBooleanExtra(EXTRA_FROM_ALERT, false) == true
 
+    /** Whether [intent] was started by tapping the alert or the transcription notification. */
+    fun opensMain(intent: Intent?): Boolean =
+        isAlertIntent(intent) || intent?.getBooleanExtra(EXTRA_FROM_TRANSCRIPT, false) == true
+
     companion object {
         const val SESSION_NOTIFICATION_ID = 1
         const val ALERT_NOTIFICATION_ID = 2
@@ -157,5 +163,6 @@ class CaptureNotifications(private val context: Context) {
         const val CHANNEL_SESSION = "session"
         const val CHANNEL_ALERTS = "alerts"
         private const val EXTRA_FROM_ALERT = "com.dennycgan.hearcopy.extra.FROM_ALERT"
+        private const val EXTRA_FROM_TRANSCRIPT = "com.dennycgan.hearcopy.extra.FROM_TRANSCRIPT"
     }
 }

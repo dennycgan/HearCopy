@@ -11,38 +11,52 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dennycgan.hearcopy.HearCopyApplication
 import com.dennycgan.hearcopy.capture.CaptureCommands.KeyDeleteResult
 import com.dennycgan.hearcopy.capture.CaptureCommands.KeySaveResult
 import com.dennycgan.hearcopy.state.isFinishing
 import com.dennycgan.hearcopy.ui.theme.HearCopyTheme
+import com.dennycgan.hearcopy.ui.theme.hearCopyBarStyle
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Temporary main screen (replaced in Cap 3). Walks the setup steps in order
- * on every resume: API key (typed here; nothing to open), overlay
- * permission, microphone, capture consent. A
- * refused step sets [declined], which stops auto-advance until the action
- * button is used. Single instance (`launchMode="singleTask"`).
+ * The single Activity (`launchMode="singleTask"`) with two screens, Main
+ * and Settings (ADR-018). While Main is shown it walks the setup steps in
+ * order on every resume: API key (entered on Settings; nothing opens by
+ * itself), overlay permission, microphone, capture consent. A refused step
+ * sets [declined], which stops auto-advance until the status card is
+ * tapped or the alert is opened.
  */
 class MainActivity : ComponentActivity() {
 
     private val container by lazy { (application as HearCopyApplication).container }
+
+    /** Saved in instance state; never the typed key (ADR-013). */
+    private var screen by mutableStateOf(Screen.Main)
 
     /**
      * Kept across recreation (configuration changes, process death); a new
      * Activity instance starts clear.
      */
     private var declined by mutableStateOf(false)
+
+    /**
+     * The last microphone request was denied and Android no longer shows
+     * the dialog: the card opens HearCopy's app info instead. Kept across
+     * recreation like [declined]; cleared once the microphone is granted.
+     */
+    private var microphoneBlocked by mutableStateOf(false)
 
     /**
      * A consent was granted and the session is starting. The consent result
@@ -70,6 +84,8 @@ class MainActivity : ComponentActivity() {
     private var keyHint by mutableStateOf<String?>(null)
     private var keyMessage by mutableStateOf<KeyMessage?>(null)
     private var keyBusy by mutableStateOf(false)
+    private var replacingKey by mutableStateOf(false)
+    private var confirmingDelete by mutableStateOf(false)
 
     /**
      * apiKeyPresent as last seen by advance() or the state collector. The
@@ -98,7 +114,11 @@ class MainActivity : ComponentActivity() {
 
     private val microphoneLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         inFlight = false
-        if (!granted) declined = true
+        if (!granted) {
+            declined = true
+            // After a denial, no rationale means Android will not show the dialog again.
+            microphoneBlocked = !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     private val consentLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -118,12 +138,19 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // The screens are always light: dark bar icons also in system dark mode.
+        enableEdgeToEdge(statusBarStyle = hearCopyBarStyle(), navigationBarStyle = hearCopyBarStyle())
         super.onCreate(savedInstanceState)
         declined = savedInstanceState?.getBoolean(KEY_DECLINED) ?: false
         inFlight = savedInstanceState?.getBoolean(KEY_IN_FLIGHT) ?: false
+        microphoneBlocked = savedInstanceState?.getBoolean(KEY_MICROPHONE_BLOCKED) ?: false
+        screen = savedInstanceState?.getString(KEY_SCREEN)
+            ?.let { saved -> Screen.entries.firstOrNull { it.name == saved } }
+            ?: Screen.Main
         // Back sends the app to the background, never closes it. API 31+
         // already does that for a root launcher activity; enabling this
         // there would also turn off the predictive back-to-home animation.
+        // Settings' BackHandler, added later, takes precedence while enabled.
         val backToBackground = object : OnBackPressedCallback(Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             override fun handleOnBackPressed() {
                 moveTaskToBack(true)
@@ -132,13 +159,15 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, backToBackground)
         // Clear the guard once the session is up, even with this screen in
         // the background. Clearing only on resume missed a session that
-        // ended before the next resume: the guard stayed set, the status
-        // line stayed on "Starting" and consent was never asked again.
+        // ended before the next resume: the status stayed on "Starting"
+        // and consent was never asked again.
         //
         // A key that becomes present while this screen is resumed (read at
         // start, or saved) continues the setup once per transition, through
-        // advance(), so a declined step is still not asked again. A
-        // transition while not resumed is picked up by the next onResume.
+        // advance(), so a declined step is still not asked again; while
+        // Settings is shown, advance() starts nothing and the return to
+        // Main continues. A transition while not resumed is picked up by
+        // the next onResume.
         uiScope.launch {
             container.store.state.collect {
                 if (it.setup.projectionActive) awaitingSession = false
@@ -153,24 +182,44 @@ class MainActivity : ComponentActivity() {
         }
         uiScope.launch { keyHint = container.captureCommands.refreshApiKey() }
         setContent {
-            val state by container.store.state.collectAsState()
+            val state by container.store.state.collectAsStateWithLifecycle()
             HearCopyTheme {
-                SetupScreen(
-                    state = state,
-                    nextStep = nextStep(state.setup),
-                    declined = declined,
-                    awaitingSession = awaitingSession && !state.setup.projectionActive,
-                    apiKey = ApiKeyUi(
-                        input = keyInput,
-                        hint = keyHint,
-                        message = keyMessage,
-                        busy = keyBusy,
-                        onInput = { keyInput = it },
-                        onSave = ::saveKey,
-                        onDelete = ::deleteKey,
-                    ),
-                    onAction = ::onActionButton,
-                )
+                BackHandler(enabled = screen == Screen.Settings) { showMain() }
+                when (screen) {
+                    Screen.Main -> MainScreen(
+                        card = statusCard(
+                            state = state,
+                            awaitingSession = awaitingSession && !state.setup.projectionActive,
+                            declined = declined,
+                            microphoneBlocked = microphoneBlocked,
+                        ),
+                        transcript = state.lastTranscript,
+                        onOpenSettings = { screen = Screen.Settings },
+                        onCardTap = ::onCardTap,
+                    )
+                    Screen.Settings -> SettingsScreen(
+                        apiKey = ApiKeyUi(
+                            present = state.setup.apiKeyPresent,
+                            input = keyInput,
+                            hint = keyHint,
+                            message = keyMessage,
+                            busy = keyBusy,
+                            replacing = replacingKey,
+                            confirmingDelete = confirmingDelete,
+                            onInput = { keyInput = it },
+                            onSave = ::saveKey,
+                            onReplace = {
+                                replacingKey = true
+                                keyMessage = null
+                            },
+                            onCancelReplace = ::resetKeyEditor,
+                            onDeleteRequest = { confirmingDelete = true },
+                            onDeleteConfirm = ::deleteKey,
+                            onDeleteDismiss = { confirmingDelete = false },
+                        ),
+                        onBack = ::showMain,
+                    )
+                }
             }
         }
     }
@@ -179,18 +228,25 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         outState.putBoolean(KEY_DECLINED, declined)
         outState.putBoolean(KEY_IN_FLIGHT, inFlight)
+        outState.putBoolean(KEY_MICROPHONE_BLOCKED, microphoneBlocked)
+        outState.putString(KEY_SCREEN, screen.name)
     }
 
     /**
      * The single instance reached again (singleTask). Runs before onResume,
-     * so a tap on the alert re-enables auto-advance for that resume. A new
-     * instance needs no such check: it starts with [declined] clear, and
-     * an instance restored after process death gets the alert intent here.
+     * so a tap on the alert re-enables auto-advance for that resume, and a
+     * tap on the alert or the transcription notification shows Main. Never
+     * read from the start intent in onCreate: a recreation keeps the last
+     * intent and would jump back to Main. A new instance starts on Main and
+     * with [declined] clear anyway, and an instance restored after process
+     * death gets the tap here.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (container.captureCommands.isAlertIntent(intent)) declined = false
+        val commands = container.captureCommands
+        if (commands.isAlertIntent(intent)) declined = false
+        if (commands.opensMain(intent)) showMain()
     }
 
     override fun onDestroy() {
@@ -200,8 +256,29 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        container.captureCommands.reportPermissions(overlayGranted(), recordAudioGranted())
+        val recordAudio = recordAudioGranted()
+        if (recordAudio) microphoneBlocked = false
+        container.captureCommands.reportPermissions(overlayGranted(), recordAudio)
         advance()
+    }
+
+    /**
+     * Shows Main and leaves the key editor. Returning while resumed
+     * continues the setup once, as a resume would; otherwise the next
+     * onResume does.
+     */
+    private fun showMain() {
+        if (screen == Screen.Main) return
+        screen = Screen.Main
+        resetKeyEditor()
+        confirmingDelete = false
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) advance()
+    }
+
+    private fun resetKeyEditor() {
+        replacingKey = false
+        keyInput = ""
+        keyMessage = null
     }
 
     private fun advance() {
@@ -209,7 +286,8 @@ class MainActivity : ComponentActivity() {
         keySeenPresent = state.setup.apiKeyPresent == true
         finishingSeen = isFinishing(state)
         if (state.setup.projectionActive) awaitingSession = false
-        if (declined || inFlight) return
+        // Settings starts nothing; the return to Main continues.
+        if (screen != Screen.Main || declined || inFlight) return
         if (shouldAskNotifications()) {
             notificationsAsked = true
             inFlight = true
@@ -228,9 +306,8 @@ class MainActivity : ComponentActivity() {
         uiScope.launch {
             when (val result = container.captureCommands.saveApiKey(keyInput)) {
                 is KeySaveResult.Saved -> {
-                    keyInput = ""
                     keyHint = result.hint
-                    keyMessage = null
+                    resetKeyEditor()
                 }
                 KeySaveResult.Invalid -> keyMessage = KeyMessage.Invalid
                 KeySaveResult.Failed -> keyMessage = KeyMessage.SaveFailed
@@ -240,13 +317,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun deleteKey() {
+        confirmingDelete = false
         if (keyBusy) return
         keyBusy = true
         uiScope.launch {
             when (container.captureCommands.deleteApiKey()) {
                 KeyDeleteResult.Deleted -> {
                     keyHint = null
-                    keyMessage = null
+                    resetKeyEditor()
                 }
                 KeyDeleteResult.Failed -> keyMessage = KeyMessage.DeleteFailed
             }
@@ -254,11 +332,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** The action button: retries the next step and clears [declined]. */
-    private fun onActionButton() {
-        if (inFlight) return
+    /** A tap on the status card: clears [declined] and opens what the card names. */
+    private fun onCardTap(tap: CardTap) {
+        if (inFlight || tap == CardTap.None) return
         declined = false
-        launch(nextStep(container.store.state.value.setup))
+        when (tap) {
+            CardTap.OpenSettings -> screen = Screen.Settings
+            CardTap.OpenAppInfo -> openAppInfo()
+            CardTap.RetryStep -> launch(nextStep(container.store.state.value.setup))
+            CardTap.None -> Unit
+        }
+    }
+
+    /**
+     * HearCopy's app info, where the microphone can be allowed. No result:
+     * the next onResume reads the permission and continues the setup.
+     */
+    private fun openAppInfo() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            declined = true
+        }
     }
 
     private fun launch(step: SetupStep) {
@@ -281,7 +377,8 @@ class MainActivity : ComponentActivity() {
                 inFlight = true
                 consentLauncher.launch(container.captureCommands.consentIntent(this))
             }
-            // Nothing to open: storage is still being read, or the key field is next.
+            // Nothing to open: storage is still being read, or the key is
+            // entered on Settings (first launch does not open it by itself).
             SetupStep.Checking, SetupStep.ApiKey, SetupStep.Done -> Unit
         }
     }
@@ -299,5 +396,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val KEY_DECLINED = "declined"
         const val KEY_IN_FLIGHT = "inFlight"
+        const val KEY_MICROPHONE_BLOCKED = "microphoneBlocked"
+        const val KEY_SCREEN = "screen"
     }
 }

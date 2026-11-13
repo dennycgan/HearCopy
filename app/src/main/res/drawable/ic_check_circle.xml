@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ready and Completed: a tick in a circle. Tinted in Compose. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12,3a9,9 0,1 1,0 18a9,9 0,1 1,0 -18z"
+        android:strokeColor="@color/hearcopy_accent"
+        android:strokeWidth="2" />
+    <path
+        android:pathData="M7.75,12.25L10.75,15.25L16.25,9.25"
+        android:strokeColor="@color/hearcopy_accent"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2" />
+</vector>

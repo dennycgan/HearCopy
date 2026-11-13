@@ -50,6 +50,12 @@ class CaptureCommands(
     /** Whether the main screen was opened from the authorisation-lost alert. */
     fun isAlertIntent(intent: Intent?): Boolean = notifications.isAlertIntent(intent)
 
+    /**
+     * Whether the main screen was opened from the authorisation-lost alert
+     * or the transcription notification; either brings Main to the front.
+     */
+    fun opensMain(intent: Intent?): Boolean = notifications.opensMain(intent)
+
     /** The system dialog that asks for capture consent. */
     fun consentIntent(context: Context): Intent =
         context.getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent()

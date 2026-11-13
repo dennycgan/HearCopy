@@ -5,4 +5,11 @@
     <color name="hearcopy_white">#FFFFFF</color>
     <color name="hearcopy_outline">#8A8A8A</color>
     <color name="hearcopy_shadow">#40000000</color>
+
+    <!-- Main screen and settings page neutrals -->
+    <color name="hearcopy_text">#222222</color>
+    <color name="hearcopy_muted">#777777</color>
+    <color name="hearcopy_border">#E7E7E7</color>
+    <color name="hearcopy_surface">#F5F5F5</color>
+    <color name="hearcopy_status_background">#FFF6F7</color>
 </resources>

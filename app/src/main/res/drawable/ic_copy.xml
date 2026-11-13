@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copy: a square in front of the corner of another. Tinted in Compose. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M10,9H19A1,1 0,0 1,20 10V19A1,1 0,0 1,19 20H10A1,1 0,0 1,9 19V10A1,1 0,0 1,10 9Z"
+        android:strokeColor="@color/hearcopy_white"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.2" />
+    <path
+        android:pathData="M6,15H5A1,1 0,0 1,4 14V5A1,1 0,0 1,5 4H14A1,1 0,0 1,15 5V6"
+        android:strokeColor="@color/hearcopy_white"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.2" />
+</vector>

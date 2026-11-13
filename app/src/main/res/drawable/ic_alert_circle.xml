@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Setup required and Failed: an exclamation mark in a circle. Tinted in Compose. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12,3a9,9 0,1 1,0 18a9,9 0,1 1,0 -18z"
+        android:strokeColor="@color/hearcopy_accent"
+        android:strokeWidth="2" />
+    <path
+        android:pathData="M12,7.5V13"
+        android:strokeColor="@color/hearcopy_accent"
+        android:strokeLineCap="round"
+        android:strokeWidth="2" />
+    <path
+        android:fillColor="@color/hearcopy_accent"
+        android:pathData="M12,15.4a1.2,1.2 0,1 1,0 2.4a1.2,1.2 0,1 1,0 -2.4z" />
+</vector>

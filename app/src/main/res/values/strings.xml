@@ -2,36 +2,32 @@
 <resources>
     <string name="app_name">HearCopy</string>
 
-    <!-- Temporary main screen -->
-    <string name="setup_title">Set up HearCopy</string>
-    <string name="setup_api_key">OpenAI API key</string>
-    <string name="setup_overlay">Display over other apps</string>
-    <string name="setup_microphone">Microphone</string>
-    <string name="setup_capture">Audio capture</string>
-    <string name="setup_done">Done</string>
-    <string name="setup_needed">Needed</string>
-    <string name="setup_overlay_hint">In the settings that open, find HearCopy and allow it to display over other apps, then come back.</string>
-    <string name="action_overlay">Allow display over other apps</string>
-    <string name="action_microphone">Allow microphone</string>
-    <string name="action_capture">Allow audio capture</string>
+    <!-- Main screen -->
+    <string name="main_slogan">Catch what you just heard.</string>
+    <string name="action_open_settings">Settings</string>
 
-    <string name="api_key_label">API key</string>
-    <string name="api_key_saved">Saved key ending in %1$s</string>
-    <string name="api_key_invalid">Enter a key made of letters, digits and symbols, with no spaces.</string>
-    <string name="api_key_save_failed">The key could not be saved. Try again.</string>
-    <string name="api_key_delete_failed">The key could not be deleted. Try again.</string>
-    <string name="action_save_key">Save key</string>
-    <string name="action_delete_key">Delete key</string>
-
-    <string name="status_setup">Complete the steps above to start.</string>
-    <string name="status_declined">A step was not allowed. Use the button to try again.</string>
+    <!-- Status card -->
+    <string name="status_checking_title">Checking setup</string>
+    <string name="status_starting_title">Starting</string>
     <string name="status_starting">Starting the capture session…</string>
+    <string name="status_finishing_title">Finishing</string>
     <string name="status_finishing">Finishing the last transcription…</string>
-    <string name="status_ready">Ready. Tap the floating button to capture audio.</string>
-    <string name="status_preparing">Starting capture…</string>
-    <string name="status_recording">Capturing audio. Tap the floating button to stop.</string>
-    <string name="status_processing">Transcribing…</string>
-    <string name="status_completed">Transcript ready. Tap the floating button to capture again.</string>
+    <string name="status_setup_title">Setup required</string>
+    <string name="setup_api_key_text">Add your OpenAI API key in Settings to start.</string>
+    <string name="setup_overlay_text">Allow HearCopy to display over other apps. In the settings that open, find HearCopy and allow it.</string>
+    <string name="setup_microphone_text">Allow the microphone. Android needs it to capture the audio other apps play; HearCopy never records the microphone.</string>
+    <string name="setup_microphone_blocked_text">The microphone is not allowed and Android no longer asks. Tap to open HearCopy\'s app settings, then allow it under Permissions.</string>
+    <string name="setup_capture_text">Allow audio capture to show the floating button.</string>
+    <string name="setup_try_again">%1$s Tap to try again.</string>
+    <string name="status_ready_title">Ready to capture</string>
+    <string name="status_ready">Tap the floating button while audio is playing.</string>
+    <string name="status_recording_title">Recording</string>
+    <string name="status_recording">Capturing audio, %1$s. Tap the floating button to stop.</string>
+    <string name="status_processing_title">Transcribing…</string>
+    <string name="status_processing">The previous transcript stays until the new one is ready.</string>
+    <string name="status_completed_title">Completed</string>
+    <string name="status_completed">The new transcript is below.</string>
+    <string name="status_failed_title">Failed</string>
 
     <!-- Failure reasons: the main screen's status line and the failure notification -->
     <string name="status_failed_timeout">No audio arrived in time. Tap the floating button to try again.</string>
@@ -53,9 +49,29 @@
 
     <!-- Transcript -->
     <string name="transcript_title">Transcript</string>
+    <string name="transcript_caption">Latest capture</string>
     <string name="transcript_empty">No transcript yet. Capture some audio and its text appears here.</string>
     <string name="action_copy_all">Copy all</string>
     <string name="transcript_copied">Copied</string>
+    <string name="transcript_footer">The last transcript stays until a new one replaces it.</string>
+
+    <!-- Settings page -->
+    <string name="settings_title">Settings</string>
+    <string name="action_back">Back</string>
+    <string name="api_key_label">OpenAI API key</string>
+    <string name="api_key_placeholder">sk-…</string>
+    <string name="api_key_masked">••••••••••••%1$s</string>
+    <string name="api_key_saved">Saved key ending in %1$s</string>
+    <string name="api_key_invalid">Enter a key made of letters, digits and symbols, with no spaces.</string>
+    <string name="api_key_save_failed">The key could not be saved. Try again.</string>
+    <string name="api_key_delete_failed">The key could not be deleted. Try again.</string>
+    <string name="action_save">Save</string>
+    <string name="action_replace">Replace</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="api_key_delete_title">Delete the API key?</string>
+    <string name="api_key_delete_text">The floating button goes away until you add a key again. The transcript is kept.</string>
+    <string name="settings_key_note">Your key is encrypted and stored only on this device. It is sent only to OpenAI.</string>
 
     <!-- Notifications -->
     <string name="channel_session_name">Capture session</string>
