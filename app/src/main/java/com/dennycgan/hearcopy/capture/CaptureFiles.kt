@@ -33,6 +33,13 @@ class CaptureFiles(root: File, private val retainDebug: Boolean) {
     }
 
     /**
+     * The temporary copy of the built-in test clip for key test [run]
+     * (ADR-019). The caller creates the directory; a leftover is removed by
+     * [clearTemp] at the next process start.
+     */
+    fun testFile(run: Int): File = File(tempDir, "test-$run.wav")
+
+    /**
      * Takes ownership of a saved clip. With retention on, it becomes
      * `debug/capture-1.wav` and older clips shift down (2 -> 3, 1 -> 2);
      * otherwise it is deleted. Returns false if a file operation failed;

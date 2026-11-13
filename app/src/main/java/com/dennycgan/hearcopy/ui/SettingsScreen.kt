@@ -71,11 +71,12 @@ class ApiKeyUi(
 
 /**
  * Back arrow and title, the OpenAI API key block (field and Save; once
- * saved the last four characters, Replace and Delete) and the note on
- * local encryption. The Connection block is added in 3.3.
+ * saved the last four characters, Replace and Delete), the Connection
+ * block (Test transcription and its result; [connection] null: storage not
+ * read yet, nothing shown) and the note on local encryption.
  */
 @Composable
-fun SettingsScreen(apiKey: ApiKeyUi, onBack: () -> Unit) {
+fun SettingsScreen(apiKey: ApiKeyUi, connection: ConnectionStatus?, onTest: () -> Unit, onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -106,6 +107,7 @@ fun SettingsScreen(apiKey: ApiKeyUi, onBack: () -> Unit) {
                 fontWeight = FontWeight.SemiBold,
             )
             ApiKeyBlock(apiKey)
+            connection?.let { ConnectionBlock(it, onTest) }
             Row(
                 modifier = Modifier.padding(top = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -183,6 +185,25 @@ private fun ApiKeyBlock(apiKey: ApiKeyUi) {
             color = MaterialTheme.colorScheme.error,
         )
     }
+}
+
+@Composable
+private fun ConnectionBlock(connection: ConnectionStatus, onTest: () -> Unit) {
+    Text(
+        text = stringResource(R.string.settings_connection_label),
+        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+    SecondaryButton(R.string.action_test_transcription, enabled = connection.canTest, onClick = onTest)
+    val line = connection.reason?.let { stringResource(connection.line, stringResource(it)) } ?: stringResource(connection.line)
+    Text(
+        text = line,
+        modifier = Modifier.padding(top = 8.dp),
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        color = if (connection.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

@@ -244,7 +244,7 @@ class ReduceTest {
     @Test
     fun `CaptureFailed fails Preparing, Recording and Processing with its reason`() {
         mapOf(
-            Preparing to FailureReason.InitFailed,
+            Preparing to FailureReason.PreparingTimeout,
             Recording(10) to FailureReason.ReadError,
             Processing to FailureReason.NoAudio,
         ).forEach { (status, reason) ->

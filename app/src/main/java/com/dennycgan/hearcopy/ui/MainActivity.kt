@@ -3,6 +3,7 @@ package com.dennycgan.hearcopy.ui
 import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -217,6 +218,8 @@ class MainActivity : ComponentActivity() {
                             onDeleteConfirm = ::deleteKey,
                             onDeleteDismiss = { confirmingDelete = false },
                         ),
+                        connection = state.setup.apiKeyPresent?.let { connectionStatus(it, state.keyTest) },
+                        onTest = container.captureCommands::testTranscription,
                         onBack = ::showMain,
                     )
                 }
@@ -306,6 +309,9 @@ class MainActivity : ComponentActivity() {
         uiScope.launch {
             when (val result = container.captureCommands.saveApiKey(keyInput)) {
                 is KeySaveResult.Saved -> {
+                    // A pasted key must not stay on the clipboard. Cleared
+                    // without reading it, so anything else on it goes too (ADR-019).
+                    getSystemService(ClipboardManager::class.java)?.clearPrimaryClip()
                     keyHint = result.hint
                     resetKeyEditor()
                 }

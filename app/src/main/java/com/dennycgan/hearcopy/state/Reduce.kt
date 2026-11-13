@@ -4,6 +4,10 @@ import com.dennycgan.hearcopy.state.CaptureEvent.ApiKeyReported
 import com.dennycgan.hearcopy.state.CaptureEvent.CaptureFailed
 import com.dennycgan.hearcopy.state.CaptureEvent.CaptureSaved
 import com.dennycgan.hearcopy.state.CaptureEvent.FirstAudio
+import com.dennycgan.hearcopy.state.CaptureEvent.KeyTestCancelled
+import com.dennycgan.hearcopy.state.CaptureEvent.KeyTestFinished
+import com.dennycgan.hearcopy.state.CaptureEvent.KeyTestReset
+import com.dennycgan.hearcopy.state.CaptureEvent.KeyTestStarted
 import com.dennycgan.hearcopy.state.CaptureEvent.LimitReached
 import com.dennycgan.hearcopy.state.CaptureEvent.PermissionsReported
 import com.dennycgan.hearcopy.state.CaptureEvent.PreparingTimedOut
@@ -124,7 +128,24 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
     is TouchPositionRestored -> if (state.touchPosition == null) state.copy(touchPosition = event.position) else state
 
     is TouchMoved -> state.copy(touchPosition = event.position)
+
+    // A new run makes every late result of an earlier run stale.
+    KeyTestStarted ->
+        if (state.keyTest == KeyTest.Running) {
+            state
+        } else {
+            state.copy(keyTest = KeyTest.Running, keyTestRun = state.keyTestRun + 1)
+        }
+
+    is KeyTestFinished -> if (state.isRunningKeyTest(event.run)) state.copy(keyTest = event.outcome) else state
+
+    KeyTestReset -> state.copy(keyTest = KeyTest.NotTested, keyTestRun = state.keyTestRun + 1)
+
+    // A finished result stays: it was committed before the teardown.
+    is KeyTestCancelled -> if (state.isRunningKeyTest(event.run)) state.copy(keyTest = KeyTest.NotTested) else state
 }
+
+private fun CaptureState.isRunningKeyTest(run: Int): Boolean = keyTest == KeyTest.Running && run == keyTestRun
 
 /**
  * The session was lost during an upload and the service has not ended yet:

@@ -77,4 +77,16 @@ sealed interface CaptureEvent {
 
     /** hearcopyTouch came to rest after a drag. Always sets the position. */
     data class TouchMoved(val position: PanelPosition) : CaptureEvent
+
+    /** Starts a key test run (ADR-019). Ignored while one is running. */
+    data object KeyTestStarted : CaptureEvent
+
+    /** Run [run] ended with [outcome]; applies only while that run is the running one. */
+    data class KeyTestFinished(val run: Int, val outcome: KeyTest.Finished) : CaptureEvent
+
+    /** A key was saved or deleted, so any result belongs to the old key. Always applies. */
+    data object KeyTestReset : CaptureEvent
+
+    /** A session teardown cancelled run [run]; applies only while that run is the running one. */
+    data class KeyTestCancelled(val run: Int) : CaptureEvent
 }

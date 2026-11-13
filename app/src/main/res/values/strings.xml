@@ -31,21 +31,20 @@
 
     <!-- Failure reasons: the main screen's status line and the failure notification -->
     <string name="status_failed_timeout">No audio arrived in time. Tap the floating button to try again.</string>
-    <string name="status_failed_init">Audio capture could not start on this device.</string>
     <string name="status_failed_read">Audio capture stopped unexpectedly. Tap the floating button to try again.</string>
-    <string name="status_failed_no_audio">The clip was silent. Play some audio and try again.</string>
-    <string name="status_failed_no_speech">No speech was recognised in the clip.</string>
-    <string name="status_failed_unauthorized">The API key was not accepted. Check the key and save it again.</string>
-    <string name="status_failed_forbidden">The API key is not allowed to use transcription.</string>
+    <string name="status_failed_no_audio">No sound was captured: nothing was playing, or the app does not allow audio capture. Play it again and retry; if it stays silent, HearCopy cannot capture that app.</string>
+    <string name="status_failed_no_speech">No speech was recognised. Capture a part with clear speech and try again.</string>
+    <string name="status_failed_unauthorized">OpenAI did not accept the API key: it may be wrong, expired or revoked. Replace it in Settings.</string>
+    <string name="status_failed_forbidden">The API key is not allowed to transcribe. Check the key\'s project and permissions in OpenAI, or replace it in Settings.</string>
     <string name="status_failed_rate_limited">Too many requests. Wait a moment and try again.</string>
-    <string name="status_failed_quota">The OpenAI account has run out of credit or reached its spending limit.</string>
-    <string name="status_failed_transcription_timeout">The transcription took too long and was stopped. Try again.</string>
+    <string name="status_failed_quota">Your OpenAI credit is used up or a spending limit was reached. Add credit or raise the limit in OpenAI, then try again.</string>
+    <string name="status_failed_transcription_timeout">The transcription took too long and was stopped. Try again, or capture a shorter clip.</string>
     <string name="status_failed_network">The transcription service could not be reached. Check the internet connection and try again.</string>
     <string name="status_failed_server">The transcription service had a problem. Try again later.</string>
-    <string name="status_failed_rejected">The transcription service refused the clip.</string>
+    <string name="status_failed_rejected">The transcription service refused the clip. Try again; if it keeps happening, run Test transcription in Settings.</string>
     <string name="status_failed_malformed">The transcription service sent an unexpected answer. Try again.</string>
-    <string name="status_failed_too_large">The clip is too large to upload.</string>
-    <string name="status_failed_key_unavailable">The API key could not be read this time. Try again.</string>
+    <string name="status_failed_too_large">The clip is too large to upload. Capture a shorter clip.</string>
+    <string name="status_failed_key_unavailable">The API key could not be read this time. Try again; if it keeps failing, enter the key again in Settings.</string>
 
     <!-- Transcript -->
     <string name="transcript_title">Transcript</string>
@@ -72,6 +71,14 @@
     <string name="api_key_delete_title">Delete the API key?</string>
     <string name="api_key_delete_text">The floating button goes away until you add a key again. The transcript is kept.</string>
     <string name="settings_key_note">Your key is encrypted and stored only on this device. It is sent only to OpenAI.</string>
+    <string name="settings_connection_label">Connection</string>
+    <string name="action_test_transcription">Test transcription</string>
+    <string name="key_test_not_configured">Not configured</string>
+    <string name="key_test_not_tested">Not tested</string>
+    <string name="key_test_running">Testing…</string>
+    <string name="key_test_passed">Test passed: the key works.</string>
+    <string name="key_test_failed">Test failed. %1$s</string>
+    <string name="key_test_unreadable">The saved key could no longer be read and was removed. Enter it again.</string>
 
     <!-- Notifications -->
     <string name="channel_session_name">Capture session</string>
@@ -81,7 +88,7 @@
     <string name="notification_session_finishing_title">Finishing the last transcription</string>
     <string name="notification_lost_title">Audio capture stopped</string>
     <string name="notification_lost_text">The floating button is gone. Tap to open HearCopy and start again.</string>
-    <string name="notification_key_unreadable_text">The saved API key can no longer be read. Tap to open HearCopy and enter it again.</string>
+    <string name="notification_key_unreadable_text">The saved API key can no longer be read. Tap to open HearCopy and enter it again in Settings.</string>
     <string name="notification_transcribing_title">Transcribing</string>
     <string name="notification_transcribing_text">Audio received. Tap to return to HearCopy for the result.</string>
     <string name="notification_done_title">Transcription complete</string>

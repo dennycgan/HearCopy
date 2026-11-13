@@ -39,6 +39,21 @@ class TeardownReasonTest {
     }
 
     @Test
+    fun `only Recents, a key delete or an unreadable key cancel a running key test`() {
+        val expected = mapOf(
+            TeardownReason.UserEnded to true,
+            TeardownReason.ProjectionLost to false,
+            TeardownReason.PermissionLost to false,
+            TeardownReason.CaptureLost to false,
+            TeardownReason.Internal to false,
+            TeardownReason.KeyRemoved to true,
+            TeardownReason.KeyUnreadable to true,
+        )
+        assertEquals(TeardownReason.entries.toSet(), expected.keys)
+        expected.forEach { (reason, cancels) -> assertEquals("for $reason", cancels, reason.cancelsKeyTest) }
+    }
+
+    @Test
     fun `a live session defers only for a lost authorisation with an upload in flight`() {
         TeardownReason.entries.forEach { reason ->
             assertEquals("$reason, no upload", EndingPlan.StopNow, reason.planFor(Phase.Live, uploadInFlight = false))

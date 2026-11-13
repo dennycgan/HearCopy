@@ -9,6 +9,10 @@ package com.dennycgan.hearcopy.state
  *
  * [lastTranscript] is the last transcript that was received, kept apart from
  * [status] so that no failure, cancel or new recording clears it.
+ *
+ * [keyTest] is the Settings key test (ADR-019), changed only by the KeyTest
+ * events; [keyTestRun] identifies its current run, and a result of any
+ * other run is dropped.
  */
 data class CaptureState(
     val setup: Setup = Setup(),
@@ -17,11 +21,35 @@ data class CaptureState(
     val lastTranscript: String? = null,
     /** Where the user last left hearcopyTouch; null until restored or dragged. */
     val touchPosition: PanelPosition? = null,
+    val keyTest: KeyTest = KeyTest.NotTested,
+    val keyTestRun: Int = 0,
 ) {
     /** Shows only the transcript's length, so the text cannot reach a log. */
     override fun toString(): String =
         "CaptureState(setup=$setup, status=$status, attempt=$attempt, " +
-            "lastTranscript=${lastTranscript?.let { "length=${it.length}" }}, touchPosition=$touchPosition)"
+            "lastTranscript=${lastTranscript?.let { "length=${it.length}" }}, touchPosition=$touchPosition, " +
+            "keyTest=$keyTest, keyTestRun=$keyTestRun)"
+}
+
+/**
+ * The Settings key test: one upload of the built-in clip. No state here
+ * carries response text.
+ */
+sealed interface KeyTest {
+    data object NotTested : KeyTest
+
+    data object Running : KeyTest
+
+    /** A result that ends a run. */
+    sealed interface Finished : KeyTest
+
+    /** The upload succeeded (a blank transcript counts); the text is not kept. */
+    data object Passed : Finished
+
+    data class Failed(val reason: FailureReason) : Finished
+
+    /** The stored key could no longer be read and was removed. */
+    data object Unreadable : Finished
 }
 
 /**
@@ -63,7 +91,6 @@ sealed interface CaptureStatus {
 
 enum class FailureReason {
     PreparingTimeout,
-    InitFailed,
     ReadError,
     NoAudio,
 

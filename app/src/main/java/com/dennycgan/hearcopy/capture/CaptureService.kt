@@ -72,6 +72,12 @@ class CaptureService : Service(), CaptureSessionHandle {
         KeyUnreadable(true, false),
         ;
 
+        /**
+         * The ending stops the use, so a running key test is cancelled too
+         * (ADR-019). A lost authorisation or our own safety net leaves it.
+         */
+        val cancelsKeyTest: Boolean get() = this == UserEnded || this == KeyRemoved || this == KeyUnreadable
+
         /** What this ending does in [phase], with or without an upload in flight. */
         fun planFor(phase: Phase, uploadInFlight: Boolean): EndingPlan = when (phase) {
             Phase.Ended -> EndingPlan.Ignore
@@ -370,6 +376,7 @@ class CaptureService : Service(), CaptureSessionHandle {
         val wasLive = phase == Phase.Live
         phase = if (plan == EndingPlan.Defer) Phase.Deferred else Phase.Ended
         log("teardown reason=$reason alert=${reason.postsAlert && wasLive} plan=$plan at=${SystemClock.elapsedRealtime()}")
+        if (reason.cancelsKeyTest) container.keyTester.cancel()
         if (wasLive) endSession(reason)
         if (plan == EndingPlan.Defer && upload != null) {
             store.dispatch(CaptureEvent.SessionLost)

@@ -86,7 +86,7 @@ fun statusCard(
 private fun setupCard(@StringRes text: Int, tryAgain: Boolean, tap: CardTap) =
     StatusCard(CardIcon.Alert, R.string.status_setup_title, text, tryAgain = tryAgain, tap = tap)
 
-/** Preparing shows as Ready (product spec). Failed is not tappable in 3.2. */
+/** Preparing shows as Ready (product spec). Only key failures are tappable. */
 private fun captureCard(status: CaptureStatus): StatusCard = when (status) {
     CaptureStatus.Ready, CaptureStatus.Preparing ->
         StatusCard(CardIcon.Check, R.string.status_ready_title, R.string.status_ready)
@@ -94,7 +94,18 @@ private fun captureCard(status: CaptureStatus): StatusCard = when (status) {
         StatusCard(CardIcon.Stop, R.string.status_recording_title, R.string.status_recording, recordingSinceMs = status.startedAtMs)
     CaptureStatus.Processing -> StatusCard(CardIcon.Spinner, R.string.status_processing_title, R.string.status_processing)
     CaptureStatus.Completed -> StatusCard(CardIcon.Check, R.string.status_completed_title, R.string.status_completed)
-    is CaptureStatus.Failed -> StatusCard(CardIcon.Alert, R.string.status_failed_title, failureStatusRes(status.reason))
+    is CaptureStatus.Failed ->
+        StatusCard(CardIcon.Alert, R.string.status_failed_title, failureStatusRes(status.reason), tap = failureTap(status.reason))
+}
+
+/** A failure the key causes opens Settings, where the key is replaced or tested (ADR-019). */
+internal fun failureTap(reason: FailureReason): CardTap = when (reason) {
+    FailureReason.Unauthorized,
+    FailureReason.Forbidden,
+    FailureReason.QuotaExceeded,
+    FailureReason.KeyUnavailable,
+    -> CardTap.OpenSettings
+    else -> CardTap.None
 }
 
 /** Whole seconds recorded after [elapsedMs]; never negative. */
@@ -107,7 +118,6 @@ fun msToNextSecond(elapsedMs: Long): Long = 1000 - elapsedMs.coerceAtLeast(0) % 
 @StringRes
 internal fun failureStatusRes(reason: FailureReason): Int = when (reason) {
     FailureReason.PreparingTimeout -> R.string.status_failed_timeout
-    FailureReason.InitFailed -> R.string.status_failed_init
     FailureReason.ReadError -> R.string.status_failed_read
     FailureReason.NoAudio -> R.string.status_failed_no_audio
     FailureReason.NoSpeech -> R.string.status_failed_no_speech

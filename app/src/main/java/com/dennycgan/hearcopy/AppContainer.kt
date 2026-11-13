@@ -2,10 +2,12 @@ package com.dennycgan.hearcopy
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.util.Log
 import com.dennycgan.hearcopy.capture.AudioSourceFactory
 import com.dennycgan.hearcopy.capture.CaptureCommands
 import com.dennycgan.hearcopy.capture.CaptureFiles
 import com.dennycgan.hearcopy.capture.CaptureSessionHandle
+import com.dennycgan.hearcopy.capture.KeyTester
 import com.dennycgan.hearcopy.capture.PlaybackCaptureSource
 import com.dennycgan.hearcopy.data.SettingsRepository
 import com.dennycgan.hearcopy.data.TouchPositionRepository
@@ -41,7 +43,7 @@ class AppContainer(context: Context) {
     /** The running capture service; main thread only. */
     var sessionHandle: CaptureSessionHandle? = null
 
-    /** Application-wide work on the main thread that must outlive a screen (key save and delete). */
+    /** Application-wide work on the main thread that must outlive a screen (key save, delete and test). */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     /** The stored API key (ADR-013); one instance per process, as DataStore requires. */
@@ -56,6 +58,25 @@ class AppContainer(context: Context) {
     /** OpenAI gpt-transcribe with the production endpoint and timeouts (ADR-012). */
     val transcriptionClient = TranscriptionClient()
 
+    /** The Settings key test (ADR-019); its run outlives the Activity. */
+    val keyTester = KeyTester(
+        store = store,
+        readKey = settings::readApiKey,
+        transcribe = transcriptionClient::transcribe,
+        openClip = { appContext.resources.openRawResource(R.raw.test_clip) },
+        tempFile = captureFiles::testFile,
+        endSessionForKeyRemoved = { sessionHandle?.endForKeyRemoved() },
+        scope = appScope,
+        io = Dispatchers.IO,
+        log = { Log.d(LOG_TAG, it) },
+    )
+
     val captureCommands =
-        CaptureCommands(appContext, store, notifications, settings, transcripts, touchPositions, appScope) { sessionHandle }
+        CaptureCommands(appContext, store, notifications, settings, transcripts, touchPositions, keyTester, appScope) {
+            sessionHandle
+        }
+
+    private companion object {
+        const val LOG_TAG = "HearCopyCapture"
+    }
 }

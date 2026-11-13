@@ -119,16 +119,25 @@ class StatusCardTest {
     }
 
     @Test
-    fun `Failed shows the reason text and cannot be tapped`() {
+    fun `Failed shows the reason text and only key failures open Settings`() {
+        val keyFailures = setOf(
+            FailureReason.Unauthorized,
+            FailureReason.Forbidden,
+            FailureReason.QuotaExceeded,
+            FailureReason.KeyUnavailable,
+        )
         FailureReason.entries.forEach { reason ->
-            val failed = card(status = CaptureStatus.Failed(reason))
-            assertEquals("$reason", StatusCard(CardIcon.Alert, R.string.status_failed_title, failureStatusRes(reason)), failed)
-            assertEquals("$reason", CardTap.None, failed.tap)
+            val tap = if (reason in keyFailures) CardTap.OpenSettings else CardTap.None
+            assertEquals(
+                "$reason",
+                StatusCard(CardIcon.Alert, R.string.status_failed_title, failureStatusRes(reason), tap = tap),
+                card(status = CaptureStatus.Failed(reason)),
+            )
         }
     }
 
     @Test
-    fun `only setup cards are tappable`() {
+    fun `Ready, Recording, Processing and Completed cannot be tapped`() {
         listOf(
             card(status = CaptureStatus.Ready),
             card(status = CaptureStatus.Recording(0)),

@@ -11,7 +11,6 @@ import com.dennycgan.hearcopy.state.FailureReason
 @StringRes
 fun failureTextRes(reason: FailureReason): Int = when (reason) {
     FailureReason.PreparingTimeout -> R.string.status_failed_timeout
-    FailureReason.InitFailed -> R.string.status_failed_init
     FailureReason.ReadError -> R.string.status_failed_read
     FailureReason.NoAudio -> R.string.status_failed_no_audio
     FailureReason.NoSpeech -> R.string.status_failed_no_speech

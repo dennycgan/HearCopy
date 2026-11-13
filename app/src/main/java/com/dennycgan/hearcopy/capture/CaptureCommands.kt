@@ -30,6 +30,7 @@ class CaptureCommands(
     private val settings: SettingsRepository,
     private val transcripts: TranscriptRepository,
     private val touchPositions: TouchPositionRepository,
+    private val keyTester: KeyTester,
     /** Application-wide, main thread: a key write and its report finish even if the screen goes. */
     private val scope: CoroutineScope,
     private val handle: () -> CaptureSessionHandle?,
@@ -124,6 +125,15 @@ class CaptureCommands(
         }
     }
 
+    /**
+     * Test transcription on Settings (ADR-019): uploads the built-in clip
+     * once with the stored key; the result lands in CaptureState.keyTest.
+     * Does nothing while a test is running. Each call is billed.
+     */
+    fun testTranscription() {
+        keyTester.start()
+    }
+
     /** Reads and reports whether a key is stored; returns its hint, or null when there is none. */
     suspend fun refreshApiKey(): String? = scope.async {
         val status = settings.apiKeyStatus()
@@ -140,6 +150,8 @@ class CaptureCommands(
                 is ApiKeySave.Saved -> {
                     log("api key saved")
                     store.dispatch(CaptureEvent.ApiKeyReported(true))
+                    // A result, or a test still running, belongs to the old key.
+                    keyTester.reset()
                     KeySaveResult.Saved(saved.hint)
                 }
                 ApiKeySave.Failed -> {
@@ -159,6 +171,7 @@ class CaptureCommands(
             ApiKeyDelete.Deleted -> {
                 log("api key deleted")
                 store.dispatch(CaptureEvent.ApiKeyReported(false))
+                keyTester.reset()
                 handle()?.endForKeyRemoved()
                 KeyDeleteResult.Deleted
             }
