@@ -783,3 +783,46 @@ native rates.
   states this.
 - Changes to .claude/rules/ leave no git history; CLAUDE.md's one-line
   summaries can drift from them, so a rules edit updates both together.
+
+## ADR-017: hearcopyTouch keeps its position across restarts
+> The button's resting position after a drag is saved in its own DataStore file and restored at process start through state/, so the button comes back where the user left it.
+- Status: Accepted (2026-11-13)
+- Anchor: 1381c97
+### Context
+- ADR-006 keeps the position in panel coordinates, in memory, for one
+  session only. The product spec asks for it to survive an app
+  restart.
+- Rule 4 forbids overlay -> data/; Rule 5 keeps DataStore in data/.
+- A corrupt DataStore file is replaced with an empty one (ADR-013); the
+  transcript has its own file for that reason (ADR-014).
+### Decision
+- state/: PanelPosition(x, y) in panel pixels; CaptureState.touchPosition.
+  TouchPositionRestored applies only when it is null; TouchMoved always
+  sets it.
+- CaptureCommands: loadTouchPosition() at process start; moveTouch()
+  dispatches TouchMoved, then writes on the app scope. A failed write is
+  logged only.
+- data/TouchPositionRepository: own file
+  no_backup/datastore/touch.preferences_pb, both coordinates in one
+  edit. A corrupt file is replaced with an empty one; a read error reads
+  as no position.
+- The overlay reads the position once at show(). A restored position
+  becomes the in-memory panel point and is placed like a configuration
+  change: mapped through the current rotation and clamped, never
+  written back to memory or storage. Only a drag end calls moveTouch;
+  the initial, restored and configuration clamps never write storage.
+  This extends the ADR-006 split rule to storage.
+- Rejected: a shared settings file (a corrupt file would lose the key
+  and the position together); the overlay writing to data/ (Rule 4).
+### Consequences
+- This amends ADR-006 ("in memory for the session"); ADR-006 Status is
+  unchanged.
+- A session that starts before the restore lands uses the default
+  position.
+- The restored position can only be mapped once the button is attached,
+  so the button may show for one frame at the default position before
+  it moves.
+- After a display size or density change the clamp keeps the button on
+  screen; the stored value changes only on the next drag.
+- The position is stored in no_backup and excluded from backup.
+- Device-A: no flash at the default position was visible.

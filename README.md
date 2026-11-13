@@ -48,7 +48,7 @@ Paths are relative to the package root `com.dennycgan.hearcopy`.
 | Capture | `capture/` | `CaptureService` runs the session; `PlaybackCaptureSource` records; `TranscriptionRun` drives each upload; `CaptureCommands` is the way in |
 | Overlay | `overlay/` | `HearCopyTouch`: the floating button, a plain View |
 | Transcription | `transcription/` | `TranscriptionClient`: one upload per clip to `gpt-transcribe` |
-| Data | `data/` | `SettingsRepository` (encrypted API key), `TranscriptRepository` (latest transcript) |
+| Data | `data/` | `SettingsRepository` (encrypted API key), `TranscriptRepository` (latest transcript), `TouchPositionRepository` (button position) |
 | Notifications | `notify/` | `CaptureNotifications`: session, alert and transcription notifications |
 | UI | `ui/` | `MainActivity` and `SetupScreen`: the temporary main screen (setup steps, latest transcript) |
 | Wiring | `AppContainer.kt` | Builds the app-wide objects and wires them; created by `HearCopyApplication` |
@@ -100,6 +100,8 @@ TikTok) while a capture session is active.
 - If a clip fails, the notification and HearCopy's main screen say why.
 - The latest transcript stays on the main screen until the next one
   replaces it, also across restarts; a failure does not clear it.
+- Drag hearcopyTouch where you want it; it stays there, also after a
+  restart.
 - To end the session, remove HearCopy from Recents: this also cancels an
   upload in progress, and a result that arrives later is dropped.
 
@@ -118,8 +120,7 @@ short clip of at least 1 second.
 
 - Version 0.1.0. V1 is in progress: capture, the floating button and the
   transcription loop work. The main screen and key setup are temporary;
-  the next step rebuilds them, adds settings and keeps the button's
-  position across restarts.
+  the next step rebuilds them and adds settings.
 - There is no release APK yet; build it from source (below).
 - Tuned for English: each request tells the model to expect English.
   OpenAI describes `gpt-transcribe` as transcribing speech in its
@@ -206,6 +207,7 @@ phone.
 - Only the last transcript is kept, unencrypted, in HearCopy's private
   storage, excluded from backup. It is never synced anywhere.
   Notifications never contain the transcript.
+- The button's position is stored on the phone, excluded from backup.
 
 ### Continuous capture during a session
 

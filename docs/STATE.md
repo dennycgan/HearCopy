@@ -22,9 +22,9 @@ details live in DECISIONS.md.
 
 ## Phase Roadmap (Cap 3 Main UI, settings and lifecycle completion)
 
-- [ ] 3.1 hearcopyTouch position across restarts: stored on drag end
+- [x] 3.1 hearcopyTouch position across restarts: stored on drag end
   in its own DataStore file, restored at process start through state/
-  and CaptureCommands
+  and CaptureCommands (ADR-017) (1381c97)
 - [ ] 3.2 Main screen and settings page (real key): header, status card
   that walks the setup steps, transcript with Copy all, settings page
   with key save, replace and delete; notification taps return to the
