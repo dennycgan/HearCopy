@@ -826,3 +826,62 @@ native rates.
   screen; the stored value changes only on the next drag.
 - The position is stored in no_backup and excluded from backup.
 - Device-A: no flash at the default position was visible.
+
+## ADR-018: Main screen and settings page in one Activity
+> MainActivity shows a Main and a Settings screen chosen by a screen enum; the setup runs through a status card on Main, the API key is entered on Settings, and notification taps return to Main.
+- Status: Accepted (2026-11-13)
+- Anchor: 13765c7
+### Context
+- The product spec and design ask for a main screen plus one settings
+  page, no bottom bar. ADR-007 relies on a single MainActivity for the
+  alert; ADR-014's transcript notification opens the main screen.
+- navigation-compose is not allowlisted.
+- ADR-013 put the key field on the main screen and continued the setup
+  when a key appeared while the screen was resumed.
+- ADR-015 holds consent while the last upload finishes.
+### Decision
+- A screen enum saved in instance state (the typed key never is). Back
+  on Settings goes to Main; Back on Main is unchanged (ADR-007).
+- The setup rows and the action button are replaced by one status card.
+  Setup required names the missing step and a tap opens it; when
+  Android no longer shows the microphone dialog, the tap opens
+  HearCopy's app info.
+- Step order unchanged. Auto-advance runs only while Main is shown;
+  returning from Settings counts as a resume. A key that appears while
+  Settings is open starts nothing.
+- ADR-015 on the new screen: the Finishing card is not tappable; consent
+  stays held until SessionEnded; then the setup continues once if Main
+  is resumed, otherwise on the next resume.
+- The transcript notification's launch intent carries its own extra.
+  CaptureCommands.opensMain(intent) is true for the alert and the
+  transcript notification and switches to Main; isAlertIntent alone
+  still re-enables auto-advance (ADR-007). Both are checked in
+  onNewIntent only, never from the Activity's start intent.
+- Preparing shows as Ready (product spec). The Recording timer ticks
+  only while the Activity is started.
+- Rejected: a second Activity (adds Back and Recents cases to the
+  lifecycle rules); navigation-compose; opening Settings automatically
+  on first launch; reading the start intent in onCreate (a recreation
+  would jump back to Main).
+### Consequences
+- This amends ADR-013's key entry and continuation rule; ADR-013 Status
+  is unchanged.
+- lifecycle-runtime-compose is declared directly at 2.9.4.
+- On Android 11+ a dismissed microphone dialog can also read as "no
+  longer asks"; the card then opens app info. Checked on Device-B before
+  V1.
+- A launcher tap while Settings is shown stays on Settings.
+- Device-A at the anchor: the screens matched the design; Gear, Back
+  and Back to home kept the session. A confirmed key delete ended the
+  session with no alert, and the key card opened Settings. Dark mode on
+  and off recreated the Activity on Settings with the field empty and
+  dark status bar icons. A key saved on Settings started nothing until
+  the return to Main, which asked for consent; a cancelled consent
+  showed the capture card with "Tap to try again", and its tap asked
+  again. The Recording card's timer ran. Tapped while Settings was
+  shown, the transcript notification opened Main (onNewIntent, no
+  recreation) with the new transcript, and Copy all copied it. No
+  AndroidRuntime errors and no key pattern in the saved logs. The
+  microphone "no longer asks" path with the app info tap, and an
+  overlay revoke during an upload (the Finishing card), were not run on
+  a device; they are left to the V1 full flow.

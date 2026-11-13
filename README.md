@@ -27,7 +27,7 @@ whatever app you paste into.
 
 | Layer | Choice |
 |---|---|
-| Language and UI | Kotlin; Jetpack Compose main screen; plain Android View for the floating button |
+| Language and UI | Kotlin; Jetpack Compose main screen and settings page; plain Android View for the floating button |
 | Audio capture | MediaProjection, AudioPlaybackCapture and AudioRecord in a foreground service |
 | Audio format | Captured at 48 kHz, decimated to 16 kHz mono WAV ([ADR-004](docs/DECISIONS.md#adr-004-capture-at-48-khz-and-decimate-to-16-khz)) |
 | Transcription | OpenAI `gpt-transcribe` over OkHttp |
@@ -50,7 +50,7 @@ Paths are relative to the package root `com.dennycgan.hearcopy`.
 | Transcription | `transcription/` | `TranscriptionClient`: one upload per clip to `gpt-transcribe` |
 | Data | `data/` | `SettingsRepository` (encrypted API key), `TranscriptRepository` (latest transcript), `TouchPositionRepository` (button position) |
 | Notifications | `notify/` | `CaptureNotifications`: session, alert and transcription notifications |
-| UI | `ui/` | `MainActivity` and `SetupScreen`: the temporary main screen (setup steps, latest transcript) |
+| UI | `ui/` | `MainActivity`, `MainScreen` and `SettingsScreen`: the main screen (status, latest transcript) and the settings page (API key) |
 | Wiring | `AppContainer.kt` | Builds the app-wide objects and wires them; created by `HearCopyApplication` |
 
 `DependencyDirectionTest` enforces the import direction. `state/` is pure
@@ -118,9 +118,9 @@ short clip of at least 1 second.
 
 ## Status
 
-- Version 0.1.0. V1 is in progress: capture, the floating button and the
-  transcription loop work. The main screen and key setup are temporary;
-  the next step rebuilds them and adds settings.
+- Version 0.1.0. V1 is in progress: capture, the floating button, the
+  transcription loop, the main screen and the settings page work. The
+  next step completes key setup.
 - There is no release APK yet; build it from source (below).
 - Tuned for English: each request tells the model to expect English.
   OpenAI describes `gpt-transcribe` as transcribing speech in its
@@ -138,11 +138,13 @@ short clip of at least 1 second.
 
 ## Setup
 
-Open HearCopy. The "Set up HearCopy" screen asks for one thing at a
-time:
+Open HearCopy. The status card on the main screen names the next step;
+HearCopy opens each system step by itself, and if you refuse one, a tap
+on the card opens it again:
 
-1. OpenAI API key: paste it and tap Save key (read Security and privacy
-   below before you create one).
+1. OpenAI API key: tap the card or the gear to open Settings, paste the
+   key and tap Save (read Security and privacy below before you create
+   one), then go back to the main screen.
 2. Display over other apps: Android opens its settings; find HearCopy,
    allow it, and come back.
 3. Microphone: Android requires this permission for capturing the audio
@@ -171,7 +173,7 @@ phone.
   only the encrypted key is stored, in HearCopy's private storage. It is
   decrypted just before each upload.
 - The last 4 characters are stored unencrypted, to show which key is
-  saved. Delete key removes it and ends the session.
+  saved. Delete, in Settings, removes it and ends the session.
 - There is no key in this repository or in the app. App backup is off,
   and an encrypted key copied to another phone cannot be decrypted there.
 - HearCopy never writes the key to its logs or error messages.
