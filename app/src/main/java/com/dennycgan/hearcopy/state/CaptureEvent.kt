@@ -71,4 +71,10 @@ sealed interface CaptureEvent {
 
         override fun toString(): String = "TranscriptRestored(length=${text.length})"
     }
+
+    /** The stored hearcopyTouch position, read at process start. Applies only when none is set. */
+    data class TouchPositionRestored(val position: PanelPosition) : CaptureEvent
+
+    /** hearcopyTouch came to rest after a drag. Always sets the position. */
+    data class TouchMoved(val position: PanelPosition) : CaptureEvent
 }

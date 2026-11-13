@@ -15,5 +15,6 @@ class HearCopyApplication : Application() {
         container.notifications.createChannels()
         container.captureCommands.loadApiKeyStatus()
         container.captureCommands.loadTranscript()
+        container.captureCommands.loadTouchPosition()
     }
 }

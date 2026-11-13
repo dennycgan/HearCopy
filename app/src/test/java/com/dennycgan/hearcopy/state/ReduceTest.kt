@@ -12,6 +12,8 @@ import com.dennycgan.hearcopy.state.CaptureEvent.SessionLost
 import com.dennycgan.hearcopy.state.CaptureEvent.SessionStarted
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStart
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStop
+import com.dennycgan.hearcopy.state.CaptureEvent.TouchMoved
+import com.dennycgan.hearcopy.state.CaptureEvent.TouchPositionRestored
 import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptReady
 import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptRestored
 import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptionFailed
@@ -471,6 +473,38 @@ class ReduceTest {
         (allStatuses + Completed).forEach { status ->
             assertFalse("live $status", isFinishing(state(status)))
             assertFalse("ended $status", isFinishing(reduce(state(status), SessionEnded)))
+        }
+    }
+
+    // hearcopyTouch position (ADR-017)
+
+    @Test
+    fun `TouchPositionRestored sets the position when none is set and nothing else`() {
+        (allStatuses + Completed).forEach { status ->
+            val before = state(status)
+            assertEquals("$status", before.copy(touchPosition = PanelPosition(10, 20)), reduce(before, TouchPositionRestored(PanelPosition(10, 20))))
+        }
+    }
+
+    @Test
+    fun `TouchPositionRestored never replaces a position from a drag`() {
+        val dragged = reduce(state(Ready), TouchMoved(PanelPosition(1, 2)))
+        assertSame(dragged, reduce(dragged, TouchPositionRestored(PanelPosition(10, 20))))
+    }
+
+    @Test
+    fun `TouchMoved always sets the position and nothing else`() {
+        (allStatuses + Completed).forEach { status ->
+            val restored = reduce(state(status), TouchPositionRestored(PanelPosition(10, 20)))
+            assertEquals("$status", restored.copy(touchPosition = PanelPosition(3, 4)), reduce(restored, TouchMoved(PanelPosition(3, 4))))
+        }
+    }
+
+    @Test
+    fun `session and transcript events keep the position`() {
+        val placed = state(Processing, attempt = 3).copy(touchPosition = PanelPosition(5, 6))
+        listOf(SessionLost, SessionEnded, TranscriptReady(3, "new"), ApiKeyReported(false)).forEach { event ->
+            assertEquals("$event", PanelPosition(5, 6), reduce(placed, event).touchPosition)
         }
     }
 }

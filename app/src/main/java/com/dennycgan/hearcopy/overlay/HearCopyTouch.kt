@@ -24,6 +24,7 @@ import com.dennycgan.hearcopy.R
 import com.dennycgan.hearcopy.capture.CaptureCommands
 import com.dennycgan.hearcopy.state.CaptureState
 import com.dennycgan.hearcopy.state.CaptureStatus
+import com.dennycgan.hearcopy.state.PanelPosition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,25 +38,20 @@ import kotlinx.coroutines.launch
 
 /**
  * hearcopyTouch: the floating capture button, a plain View in the window
- * manager. One instance per session, so its position lives in memory for the
- * session only. Main thread only.
+ * manager. One instance per session. Main thread only.
  *
- * Position: the user's position is stored in panel coordinates, so the button
- * keeps its place on the glass whatever the screen content does. Only the
- * resting position after a drag (and the first position) is stored; a clamp
- * after a configuration change moves the window but never writes back.
+ * Position: the user's position is kept in panel coordinates, so the button
+ * keeps its place on the glass whatever the screen content does. The stored
+ * position (ADR-017) is read once at show() and placed like a configuration
+ * change. Only the resting position after a drag (and, without a stored one,
+ * the first position) is remembered, and only a drag end saves it; a clamp
+ * moves the window but never writes back.
  */
 class HearCopyTouch(
     private val context: Context,
     private val state: StateFlow<CaptureState>,
     private val commands: CaptureCommands,
 ) {
-
-    private enum class ClampTrigger(val storesPosition: Boolean) {
-        Initial(storesPosition = true),
-        DragEnd(storesPosition = true),
-        Configuration(storesPosition = false),
-    }
 
     private class Geometry(val rotation: Int, val naturalWidth: Int, val naturalHeight: Int)
 
@@ -76,8 +72,7 @@ class HearCopyTouch(
         y = (TOP_DP * density).toInt()
     }
 
-    /** Where the user put the button, on the panel; null until first measured. */
-    private var stored: PanelPoint? = null
+    private val placement = TouchPlacement { commands.moveTouch(PanelPosition(it.x, it.y)) }
 
     private val view = TouchView(context, ::onConfigurationChanged).apply {
         setOnClickListener { onTap() }
@@ -98,6 +93,18 @@ class HearCopyTouch(
      */
     fun show(): Boolean {
         if (scope != null) return true
+        // Read once: a position restored after this applies from the next session.
+        val firstPlacement = if (placement.point != null) {
+            null
+        } else {
+            val restored = state.value.touchPosition
+            if (restored != null) {
+                placement.restore(PanelPoint(restored.x, restored.y))
+                ClampTrigger.Restored
+            } else {
+                ClampTrigger.Initial
+            }
+        }
         try {
             windowManager.addView(view, params)
         } catch (e: RuntimeException) {
@@ -113,7 +120,12 @@ class HearCopyTouch(
                 }
             }
         }
-        if (stored == null) afterNextLayout { correctOverflow(ClampTrigger.Initial) }
+        // The display, rotation and frame are known only once the window is attached.
+        when (firstPlacement) {
+            ClampTrigger.Restored -> afterNextLayout { clamp(ClampTrigger.Restored) }
+            ClampTrigger.Initial -> afterNextLayout { correctOverflow(ClampTrigger.Initial) }
+            else -> Unit
+        }
         return true
     }
 
@@ -204,14 +216,15 @@ class HearCopyTouch(
     /**
      * First step: clamp in LayoutParams space, which also brings the window
      * back inside the frame before it is measured. After a drag the start is
-     * where the finger left the window; after a configuration change it is
-     * the stored panel position mapped to the current rotation.
+     * where the finger left the window; after a configuration change or a
+     * restore it is the remembered panel position mapped to the current
+     * rotation.
      */
     private fun clamp(trigger: ClampTrigger) {
         val frame = visibleFrame()
         val current = TouchPosition(params.x, params.y)
-        val panel = stored
-        val desired = if (trigger == ClampTrigger.Configuration && panel != null) {
+        val panel = placement.point
+        val desired = if (trigger.fromMemory && panel != null) {
             val g = geometry()
             val screen = panelToScreen(panel, g.rotation, g.naturalWidth, g.naturalHeight, sizePx)
             screenToParams(screen, frame, sizePx)
@@ -225,7 +238,8 @@ class HearCopyTouch(
     /**
      * Second step: measure where the window really is and correct once. This
      * makes the clamp independent of how LayoutParams map to the screen. A
-     * drag end (or the first layout) stores the final resting position.
+     * drag end (or the first layout without a restored position) remembers
+     * the final resting position; only a drag end saves it.
      */
     private fun correctOverflow(trigger: ClampTrigger) {
         val frame = visibleFrame()
@@ -234,16 +248,14 @@ class HearCopyTouch(
         val current = TouchPosition(params.x, params.y)
         val corrected = correctedForOverflow(current, location[0], location[1], sizePx, frame)
         val g = geometry()
-        if (trigger.storesPosition) {
-            // Measured, plus the correction about to be applied.
-            val resting = ScreenPoint(location[0] + current.x - corrected.x, location[1] + corrected.y - current.y)
-            stored = screenToPanel(resting, g.rotation, g.naturalWidth, g.naturalHeight, sizePx)
-        }
+        // Measured, plus the correction about to be applied.
+        val resting = ScreenPoint(location[0] + current.x - corrected.x, location[1] + corrected.y - current.y)
+        placement.settle(trigger, screenToPanel(resting, g.rotation, g.naturalWidth, g.naturalHeight, sizePx))
         Log.d(
             TAG,
             "overlay clamp $trigger: rotation=${g.rotation} frame=${frame.left},${frame.top},${frame.right},${frame.bottom} " +
                 "params=(${current.x},${current.y}) screen=(${location[0]},${location[1]}) " +
-                "corrected=${corrected != current} stored=${stored?.let { "(${it.x},${it.y})" }}",
+                "corrected=${corrected != current} stored=${placement.point?.let { "(${it.x},${it.y})" }}",
         )
         if (corrected != current) moveTo(corrected)
     }

@@ -15,12 +15,21 @@ data class CaptureState(
     val status: CaptureStatus = CaptureStatus.Ready,
     val attempt: Int = 0,
     val lastTranscript: String? = null,
+    /** Where the user last left hearcopyTouch; null until restored or dragged. */
+    val touchPosition: PanelPosition? = null,
 ) {
     /** Shows only the transcript's length, so the text cannot reach a log. */
     override fun toString(): String =
         "CaptureState(setup=$setup, status=$status, attempt=$attempt, " +
-            "lastTranscript=${lastTranscript?.let { "length=${it.length}" }})"
+            "lastTranscript=${lastTranscript?.let { "length=${it.length}" }}, touchPosition=$touchPosition)"
 }
+
+/**
+ * hearcopyTouch's top-left corner in panel pixels, in the panel's natural
+ * orientation (ADR-006), so it names the same point on the glass in any
+ * rotation.
+ */
+data class PanelPosition(val x: Int, val y: Int)
 
 /**
  * Start conditions. Each field has exactly one writer event, so no writer

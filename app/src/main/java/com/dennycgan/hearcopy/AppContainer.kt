@@ -8,6 +8,7 @@ import com.dennycgan.hearcopy.capture.CaptureFiles
 import com.dennycgan.hearcopy.capture.CaptureSessionHandle
 import com.dennycgan.hearcopy.capture.PlaybackCaptureSource
 import com.dennycgan.hearcopy.data.SettingsRepository
+import com.dennycgan.hearcopy.data.TouchPositionRepository
 import com.dennycgan.hearcopy.data.TranscriptRepository
 import com.dennycgan.hearcopy.notify.CaptureNotifications
 import com.dennycgan.hearcopy.state.CaptureStateStore
@@ -49,9 +50,12 @@ class AppContainer(context: Context) {
     /** The last transcript (ADR-014); its own DataStore file, one instance per process. */
     val transcripts = TranscriptRepository(appContext)
 
+    /** hearcopyTouch's resting position (ADR-017); its own DataStore file, one instance per process. */
+    val touchPositions = TouchPositionRepository(appContext)
+
     /** OpenAI gpt-transcribe with the production endpoint and timeouts (ADR-012). */
     val transcriptionClient = TranscriptionClient()
 
     val captureCommands =
-        CaptureCommands(appContext, store, notifications, settings, transcripts, appScope) { sessionHandle }
+        CaptureCommands(appContext, store, notifications, settings, transcripts, touchPositions, appScope) { sessionHandle }
 }

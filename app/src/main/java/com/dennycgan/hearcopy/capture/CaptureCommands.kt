@@ -8,10 +8,12 @@ import com.dennycgan.hearcopy.data.ApiKeyDelete
 import com.dennycgan.hearcopy.data.ApiKeySave
 import com.dennycgan.hearcopy.data.ApiKeyStatus
 import com.dennycgan.hearcopy.data.SettingsRepository
+import com.dennycgan.hearcopy.data.TouchPositionRepository
 import com.dennycgan.hearcopy.data.TranscriptRepository
 import com.dennycgan.hearcopy.notify.CaptureNotifications
 import com.dennycgan.hearcopy.state.CaptureEvent
 import com.dennycgan.hearcopy.state.CaptureStateStore
+import com.dennycgan.hearcopy.state.PanelPosition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -27,6 +29,7 @@ class CaptureCommands(
     private val notifications: CaptureNotifications,
     private val settings: SettingsRepository,
     private val transcripts: TranscriptRepository,
+    private val touchPositions: TouchPositionRepository,
     /** Application-wide, main thread: a key write and its report finish even if the screen goes. */
     private val scope: CoroutineScope,
     private val handle: () -> CaptureSessionHandle?,
@@ -84,6 +87,34 @@ class CaptureCommands(
             val text = transcripts.load() ?: return@launch
             store.dispatch(CaptureEvent.TranscriptRestored(text))
             log("transcript restored: length=${text.length}")
+        }
+    }
+
+    /**
+     * Restores hearcopyTouch's stored position; called at process start. A
+     * drag in the meantime wins (TouchPositionRestored applies only to none).
+     */
+    fun loadTouchPosition() {
+        scope.launch {
+            val (x, y) = touchPositions.load() ?: return@launch
+            store.dispatch(CaptureEvent.TouchPositionRestored(PanelPosition(x, y)))
+            log("touch position restored")
+        }
+    }
+
+    /**
+     * hearcopyTouch came to rest after a drag at [position] (ADR-017). The
+     * state changes at once; the write follows, and a failed write is only
+     * logged.
+     */
+    fun moveTouch(position: PanelPosition) {
+        store.dispatch(CaptureEvent.TouchMoved(position))
+        scope.launch {
+            if (touchPositions.save(position.x, position.y)) {
+                log("touch position saved")
+            } else {
+                log("touch position save failed")
+            }
         }
     }
 

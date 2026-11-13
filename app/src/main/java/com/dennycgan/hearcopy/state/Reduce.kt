@@ -12,6 +12,8 @@ import com.dennycgan.hearcopy.state.CaptureEvent.SessionLost
 import com.dennycgan.hearcopy.state.CaptureEvent.SessionStarted
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStart
 import com.dennycgan.hearcopy.state.CaptureEvent.TapStop
+import com.dennycgan.hearcopy.state.CaptureEvent.TouchMoved
+import com.dennycgan.hearcopy.state.CaptureEvent.TouchPositionRestored
 import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptReady
 import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptRestored
 import com.dennycgan.hearcopy.state.CaptureEvent.TranscriptionFailed
@@ -117,6 +119,11 @@ fun reduce(state: CaptureState, event: CaptureEvent): CaptureState = when (event
 
     // A transcript received in this process is newer than the stored one.
     is TranscriptRestored -> if (state.lastTranscript == null) state.copy(lastTranscript = event.text) else state
+
+    // A drag in this process is newer than the stored position.
+    is TouchPositionRestored -> if (state.touchPosition == null) state.copy(touchPosition = event.position) else state
+
+    is TouchMoved -> state.copy(touchPosition = event.position)
 }
 
 /**

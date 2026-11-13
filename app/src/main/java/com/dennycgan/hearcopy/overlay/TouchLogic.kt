@@ -90,6 +90,49 @@ internal class TouchGesture(slopPx: Int) {
     }
 }
 
+/**
+ * Why the button is being placed. [fromMemory]: the target is the remembered
+ * panel point mapped to the current rotation, not where the window is now.
+ * [storesPosition]: the measured resting point becomes the remembered one.
+ * [savesPosition]: it is also saved to storage (ADR-017). Only a drag end
+ * saves; a clamp never writes back (ADR-006 split rule).
+ */
+internal enum class ClampTrigger(val fromMemory: Boolean, val storesPosition: Boolean, val savesPosition: Boolean) {
+    /** First layout with no restored position: the default becomes the remembered point. */
+    Initial(fromMemory = false, storesPosition = true, savesPosition = false),
+
+    /** First layout with a restored position: placed like a configuration change. */
+    Restored(fromMemory = true, storesPosition = false, savesPosition = false),
+
+    DragEnd(fromMemory = false, storesPosition = true, savesPosition = true),
+
+    Configuration(fromMemory = true, storesPosition = false, savesPosition = false),
+}
+
+/**
+ * The remembered panel point of one hearcopyTouch instance, and the only
+ * place that decides, per [ClampTrigger], whether it changes and whether
+ * [save] runs.
+ */
+internal class TouchPlacement(private val save: (PanelPoint) -> Unit) {
+
+    /** Where the user put the button, on the panel; null until restored or first measured. */
+    var point: PanelPoint? = null
+        private set
+
+    /** The stored position, read once at show(); never saved again. */
+    fun restore(stored: PanelPoint) {
+        if (point == null) point = stored
+    }
+
+    /** The button has come to rest at [resting] after [trigger]. */
+    fun settle(trigger: ClampTrigger, resting: PanelPoint) {
+        if (!trigger.storesPosition) return
+        point = resting
+        if (trigger.savesPosition) save(resting)
+    }
+}
+
 /** Dragging right reduces the inset from the right edge. */
 internal fun applyDrag(start: TouchPosition, delta: DragDelta): TouchPosition =
     TouchPosition(start.x - delta.dx, start.y + delta.dy)
