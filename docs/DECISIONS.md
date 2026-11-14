@@ -1026,3 +1026,97 @@ native rates.
   drawer, on a light and a dark wallpaper: it read clearly, no bar was
   clipped by the launcher mask, and the earlier install still showed
   the default icon.
+
+## ADR-021: Release build, signing and distribution
+> Release APKs are built and signed only by the owner, in a separate clone, from a signing file outside the repository, fail without it, are shrunk by R8 without obfuscation, and are published as immutable GitHub Release assets with their certificate fingerprint in the README.
+- Status: Accepted (2026-11-14)
+- Anchor: 8c6318f
+### Context
+- The product spec distributes a signed APK on GitHub Releases with a
+  published SHA-256. Updates must carry the same signing certificate.
+- CLAUDE.md forbids the agent to read or reference signing secrets
+  and keystore.properties; the agent's file denies match only some
+  file names.
+- AGP builds an unsigned release APK when no signing config is set.
+  `./gradlew test` and CI configure the release variant with no
+  secrets.
+- AGP 9.5.1 writes the full signing config to a file only for test
+  APKs and test suites; the app's packaging task records unsalted
+  SHA-256 hashes of both passwords and the key alias as task inputs.
+- The unshrunk APK is 33.3 MB. Every shipped library brings its own
+  R8 rules; HearCopy uses no reflection. Logs name exception classes
+  (ADR-014). The Android Developers Blog (2025-11-18) advises
+  against -dontobfuscate in release builds for size.
+### Decision
+- Signing values live in a properties file outside the repository,
+  next to a .keystore file, named by HEARCOPY_SIGNING_PROPERTIES.
+  The owner sets it only in an own terminal, in a separate clone at
+  a reported sha, builds with --no-daemon --no-configuration-cache,
+  removes it, copies the APK out and deletes the clone. The agent
+  never reads it and never builds with it set.
+- Without a complete file there is no release signing config and the
+  release packaging tasks fail with one message, after R8 and
+  lintVitalRelease; configuration, debug builds, unit tests, lint and
+  the R8 task do not read it.
+- CI holds no signing secret and never signs; its build step also
+  runs the release R8 task.
+- Release: R8 with proguard-android-optimize.txt and -dontobfuscate,
+  no own keep rules, no resource shrinking.
+- Release builds keep the HearCopyCapture logs; debug clip retention
+  stays (ADR-009).
+- versionCode starts at 1 for 1.0.0 and grows by 1 per published
+  release. The release is built from, and tagged v<versionName> on,
+  main HEAD once its docs are pushed and CI is green. It is created
+  as a draft, checked on a phone, then published unchanged, with
+  immutable releases on. Asset HearCopy-<versionName>.apk.
+- Third-party notices ship as assets/third_party_notices.txt, linked
+  from the README and from the release notes at the tag.
+- Bundled licences: Apache-2.0, BSD-3-Clause, MPL-2.0 (the Public
+  Suffix List) and BSL-1.0.
+- Rejected: keystore.properties in the working tree (CLAUDE.md);
+  the signed build as a command in the agent's session (path and
+  output in its context); signing in CI; obfuscation (public source,
+  unreadable logs and stack traces); R8 off (APK size); stripping
+  release logs (no release device evidence); an in-app licences
+  screen (product spec settings scope); the oss-licenses plugin (not
+  allowlisted).
+### Consequences
+- Losing the keystore or its password ends updates for every install;
+  the owner keeps offline backups.
+- The keystore password is at least 32 letters and digits: the
+  recorded unsalted hash is then not guessable, and the properties
+  file needs no escaping.
+- -dontobfuscate costs APK size, as the Android Developers Blog
+  warns; the difference was not measured (owner decision).
+- A self-built APK cannot update the official one or the other way
+  round; switching needs an uninstall, which deletes the saved key
+  and transcript.
+- R8 problems surface only in R8 builds and release device runs, not
+  in unit tests.
+- Release builds are not debuggable: no run-as; retention is checked
+  through the flag.
+- A published asset cannot be replaced: a bad asset means a new
+  version, and a deleted immutable release's tag is never reused.
+- The app is not registered for Android developer verification
+  (D-008).
+- This amends ADR-002: CI also runs the release R8 task. ADR-002
+  Status is unchanged.
+- The ADR-018 dismissed microphone dialog path, the app info tap
+  and the ADR-015 overlay revoke during an upload were not run on
+  Android 11 (owner decision).
+- The first signed build stopped at checkReleaseSigning with no APK:
+  the properties file had a wrong name. Its storeFile path was not
+  ASCII either, which would have failed the build after
+  checkReleaseSigning. storeFile needs forward slashes (a backslash is
+  an escape character in a properties file) and an ASCII-only path
+  (the file is read as ISO-8859-1).
+- At the anchor: the release APK 1.0.0 is 3.5 MB, signed with the v2
+  scheme only by one signer, and not debuggable; signing certificate
+  SHA-256
+  f10e55620ece8f61c6ddec580baae77832807e6022dcd574c6588f206817c838.
+  Device-A: a TikTok clip was transcribed, and after a force stop the
+  transcript was still there when the app was reopened from Recents.
+  Device-B: setup went through, and the overlay permission opened
+  Android's overlay list; a TikTok clip recorded at 48 kHz was
+  transcribed. No crash, no R8 failure and no key pattern in the saved
+  logs of either phone.

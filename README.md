@@ -278,8 +278,21 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 `./gradlew test` runs the unit and architecture tests. A debug build
 keeps the last three uploaded clips in HearCopy's private storage for
-listening checks; release builds keep none. There is no release signing
-setup yet.
+listening checks; release builds keep none.
+
+A release build needs the environment variable
+`HEARCOPY_SIGNING_PROPERTIES`, naming a properties file outside the
+repository that sets `storeFile` (a PKCS12 keystore), `storePassword`,
+`keyAlias` and `keyPassword`. Write `storeFile` with forward slashes
+and keep the path ASCII-only: a backslash is an escape character in a
+properties file, and the file is read as ISO-8859-1. If the variable
+is not set or the file is missing or incomplete,
+`./gradlew assembleRelease` fails after R8 and lint; debug builds need
+nothing. An APK you build yourself is signed with your own key, so
+Android will not install it over the official app, or the official app
+over it; switching needs an uninstall, which deletes the saved key and
+transcript. Debug builds install as a separate app,
+`com.dennycgan.hearcopy.debug`.
 
 ## How this was built
 
