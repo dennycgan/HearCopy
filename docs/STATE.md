@@ -10,33 +10,13 @@ details live in DECISIONS.md.
 - [x] Cap 2 Transcription loop
 - [x] Public repo
 - [x] Cap 3 Main UI, settings and lifecycle completion
-- [~] V1 release  <- YOU ARE HERE
-  - Device-B (Android 11): setup, 48 kHz capture and a transcription
-    checked with the V1.3 release APK; the rest of the Device-B full
-    flow and the two paths moved from Cap 3 phase 3.2 are dropped by
-    owner decision.
+- [x] V1 release
+- No next step is scoped yet  <- YOU ARE HERE
 
-## Phase Roadmap (V1 release)
+## Phase Roadmap
 
-- [x] V1.1 Debug side by side and app icon: debug builds install as
-  com.dennycgan.hearcopy.debug; adaptive launcher icon, a waveform on
-  the accent; manifest android:icon (ADR-020) (481c920)
-- [x] V1.2 Device-B full flow: closed by owner decision without a
-  device run; nothing was installed or run; the 48 kHz check ran with
-  the V1.3 release APK, the README tested-on line moves to V1.5
-- [x] V1.3 Release build (Device-A, release APK, real key): CLAUDE.md
-  rules edit for the signed build; release signing that fails closed
-  without the signing file; R8 without obfuscation; version 1.0.0;
-  CHANGELOG.md; third-party notices; R8 task in CI; signed build by the
-  owner in a separate clone; README release-build paragraph; the same
-  APK also on Device-B: setup and a clip, with the 48 kHz log check
-  (ADR-021) (8c6318f)
-- [ ] V1.4 Release candidate on the public path (Device-B, real key):
-  signed build from a GitHub clone at the pushed head; immutable
-  releases on; draft release with the APK; install from the draft in
-  Chrome and one launch
-- [ ] V1.5 Publish and close: publish the draft unchanged; asset digest
-  check; README tested-on line, download, install and licence sections
+- No next step is scoped yet. Its phases are written here once the
+  owner approves its design.
 
 ## Known debt
 

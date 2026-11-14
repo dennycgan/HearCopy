@@ -90,3 +90,32 @@ Archive of the phases of each closed Cap or roadmap step. Append only.
   after a key save, Test transcription with a built-in clip, failure
   and alert texts that say what to do (D-006), InitFailed removed
   (ADR-019) (e681af4)
+
+## V1 release (2026-11-14)
+
+- [x] V1.1 Debug side by side and app icon: debug builds install as
+  com.dennycgan.hearcopy.debug; adaptive launcher icon, a waveform on
+  the accent; manifest android:icon (ADR-020) (481c920)
+- [x] V1.2 Device-B full flow: closed by owner decision without a
+  device run; nothing was installed or run; the 48 kHz check ran with
+  the V1.3 release APK; the rest of the Device-B full flow and the two
+  paths moved from Cap 3 phase 3.2 were dropped by owner decision
+- [x] V1.3 Release build (Device-A, release APK, real key): CLAUDE.md
+  rules edit for the signed build; release signing that fails closed
+  without the signing file; R8 without obfuscation; version 1.0.0;
+  CHANGELOG.md; third-party notices; R8 task in CI; signed build by the
+  owner in a separate clone; README release-build paragraph; the same
+  APK also on Device-B: setup and a clip, with the 48 kHz log check
+  (ADR-021) (8c6318f)
+- [x] V1.4 Release candidate on the public path: release candidate
+  built by the owner from a GitHub clone at 61c2c06; signature, asset
+  digest and content scan checked; immutable releases on and the draft
+  release created (owner); the install from the draft was not run
+  (owner decision); after publishing, the owner installed the published
+  APK on Device-B from Chrome, not signed in to GitHub, and used it with
+  a real key
+- [x] V1.5 Publish and close: the draft published with its asset
+  unchanged as v1.0.0 at 61c2c06, immutable and latest (owner); asset
+  digest and the releases/latest redirect checked; README download
+  link, Download and install section, status and tested-on lines, key
+  line and third-party licences

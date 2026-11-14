@@ -2,6 +2,9 @@
 
 *Catch what you just heard.*
 
+[Download the latest APK](https://github.com/dennycgan/HearCopy/releases/latest).
+Android 10 or later; see [Download and install](#download-and-install).
+
 HearCopy is an Android app that turns a short stretch of audio playing on
 your phone into text you can select and copy.
 
@@ -120,10 +123,9 @@ short clip of at least 1 second.
 
 ## Status
 
-- Version 0.1.0. V1 is in progress: capture, the floating button, the
-  transcription loop, the main screen, the settings page and key setup
-  work. The next step is the V1 release.
-- There is no release APK yet; build it from source (below).
+- Version 1.0.0, the first release. Download it from
+  [Releases](https://github.com/dennycgan/HearCopy/releases) or build it
+  from source (below).
 - Tuned for English: each request tells the model to expect English.
   OpenAI describes `gpt-transcribe` as transcribing speech in its
   original language
@@ -133,10 +135,58 @@ short clip of at least 1 second.
   in tests, Chinese and Japanese videos came back in Chinese and
   Japanese despite the English hint. Only English is tested regularly.
 - Tested on an Android 10 phone (called Device-A in the docs) with TikTok
-  as the audio source. An Android 11 phone is checked before V1. Minimum
-  Android 10, phones in portrait.
+  as the audio source. Setup and a transcription were also checked on an
+  Android 11 phone (Device-B) with the release build. Minimum Android 10,
+  phones in portrait; newer versions are not tested.
 - You need your own OpenAI API key. Every transcription is billed to your
   OpenAI account.
+
+## Download and install
+
+HearCopy is not on Google Play. Install it from this repository's
+Releases page. You need Android 10 or later; it has been tested on
+Android 10 and 11 only.
+
+1. On your phone, open
+   [the latest release](https://github.com/dennycgan/HearCopy/releases/latest)
+   and, under Assets, tap `HearCopy-<version>.apk` to download it.
+2. Open the downloaded file. Android asks you to allow the app you
+   opened it from (your browser or Files app) to install unknown
+   apps; allow it for that app
+   ([Android: user opt-in for unknown apps](https://developer.android.com/distribute/marketing-tools/alternative-distribution#unknown-sources)).
+3. Google Play Protect may ask to scan the app first, because it has
+   not seen it before. On an Android 11 phone in November 2026 it showed
+   "App scan recommended"; after Scan app it said "This app looks safe"
+   and offered Install and Don't install. What you see can differ by
+   phone and over time
+   ([Google Play Protect](https://support.google.com/android/answer/2812853),
+   [Play Protect warnings](https://developers.google.com/android/play-protect/warning-dev-guidance)).
+   If Play Protect reports the app as harmful, do not install it,
+   and report it to this repository.
+4. When it is installed, you can switch "Install unknown apps" off
+   again for that app. Then follow Setup below.
+
+To update, install the newer APK over the old one; your key,
+transcript and settings stay. Android accepts an update only if it
+is signed with the same key as the installed app.
+
+Checking the file (optional, on a computer):
+- The release page shows each file's SHA-256 next to it. Compare it
+  with `certutil -hashfile HearCopy-<version>.apk SHA256` (Windows),
+  `shasum -a 256 HearCopy-<version>.apk` (macOS) or
+  `sha256sum HearCopy-<version>.apk` (Linux).
+- The signing certificate: `apksigner verify --print-certs
+  HearCopy-<version>.apk` (Android SDK build-tools) must print
+  `Signer #1 certificate SHA-256 digest: f10e55620ece8f61c6ddec580baae77832807e6022dcd574c6588f206817c838`.
+
+These checks show that the file is the one published here; a phone
+cannot check the certificate before installing.
+
+HearCopy is not registered for Android developer verification.
+Google plans to roll the requirement out globally in 2027; an
+unregistered app can then be installed with ADB or Android's
+advanced flow
+([Android developer verification](https://developer.android.com/developer-verification)).
 
 ## Setup
 
@@ -181,8 +231,11 @@ phone.
 - There is no key in this repository or in the app. App backup is off,
   and an encrypted key copied to another phone cannot be decrypted there.
 - HearCopy never writes the key to its logs or error messages.
-- Only enter your key into a build made from this repository, never into
-  a modified build from elsewhere.
+- Only enter your key into HearCopy installed from this repository's
+  Releases page (its signing certificate is listed under
+  [Download and install](#download-and-install)) or into a build you
+  made yourself from this repository's source. Never enter it into a
+  modified build from elsewhere.
 - After you save a key, HearCopy clears the clipboard without reading
   it, so anything else on it is cleared too. Your keyboard's own
   clipboard history is out of HearCopy's reach.
@@ -309,17 +362,23 @@ Work is split into capabilities ("Caps"), each designed and approved
 before any code is written. Decisions that bind later work are recorded
 as ADRs in [docs/DECISIONS.md](docs/DECISIONS.md);
 [docs/STATE.md](docs/STATE.md) is the current snapshot and
-[docs/PHASE_HISTORY.md](docs/PHASE_HISTORY.md) the record of closed Caps.
-Besides the import rules in [Architecture](#architecture), guard tests
-check the package and repository layout, a closed dependency allowlist,
-the manifest, where UI text and colours may live, and that tracked files
-are English only. CI runs the build, all tests and lint, a full-history
-gitleaks secret scan and the commit check, with every action pinned by
-commit SHA. The agent can build, install and read device logs but cannot
-see or hear the phone, so the owner accepts every phase on a real device.
+[docs/PHASE_HISTORY.md](docs/PHASE_HISTORY.md) the record of closed Caps
+and roadmap steps. Besides the import rules in
+[Architecture](#architecture), guard tests check the package and
+repository layout, a closed dependency allowlist, the manifest, where UI
+text and colours may live, and that tracked files are English only. CI
+runs the build, all tests and lint, a full-history gitleaks secret scan
+and the commit check, with every action pinned by commit SHA. The agent
+can build, install and read device logs but cannot see or hear the
+phone, so the owner accepts every phase that changes the app on a real
+device.
 
 HearCopy is not affiliated with OpenAI or TikTok.
 
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+Third-party licences: the licences and notices of the bundled
+open-source components are in
+[third_party_notices.txt](app/src/main/assets/third_party_notices.txt).
