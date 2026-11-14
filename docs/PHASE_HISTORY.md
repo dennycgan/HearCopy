@@ -75,3 +75,18 @@ Archive of the phases of each closed Cap or roadmap step. Append only.
 - [x] GitHub secret scanning, push protection and private vulnerability
   reporting (owner)
 - [x] Outside check while logged out (owner)
+
+## Cap 3: Main UI, settings and lifecycle completion (2026-11-13)
+
+- [x] 3.1 hearcopyTouch position across restarts: stored on drag end
+  in its own DataStore file, restored at process start through state/
+  and CaptureCommands (ADR-017) (1381c97)
+- [x] 3.2 Main screen and settings page (real key): header, status card
+  that walks the setup steps, transcript with Copy all, settings page
+  with key save, replace and delete; notification taps return to the
+  main screen; lifecycle-runtime-compose; D-002 re-check (ADR-018)
+  (13765c7)
+- [x] 3.3 Key setup and failure guidance (real key): clipboard cleared
+  after a key save, Test transcription with a built-in clip, failure
+  and alert texts that say what to do (D-006), InitFailed removed
+  (ADR-019) (e681af4)

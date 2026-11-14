@@ -885,3 +885,97 @@ native rates.
   microphone "no longer asks" path with the app info tap, and an
   overlay revoke during an upload (the Finishing card), were not run on
   a device; they are left to the V1 full flow.
+
+## ADR-019: Key setup and failure guidance
+> After a key save HearCopy clears the clipboard without reading it, a Test transcription button sends a built-in clip once per tap with its result held in the state store, and every failure text says what to do next.
+- Status: Accepted (2026-11-13)
+- Anchor: e681af4
+### Context
+- The product spec: saving a key does not prove it works; a test sends
+  about 1 s of built-in audio and shows not tested, passed or failed
+  with a reason. Failures must say what to do; auth, permission and
+  quota errors guide to Settings.
+- The product spec has a single state source; a test result must
+  survive a recreation (ADR-003 keeps recreation on dark mode), and a
+  lost result may already be billed (ADR-012).
+- A pasted key can be copied with a label or quotes around it, so an
+  exact compare with the saved key can miss it.
+- D-006: a blocked source and a silent one both record as exact zeros.
+- ADR-005 kept FailureReason.InitFailed until this copy was designed;
+  nothing produces it since ADR-005.
+### Decision
+- Clipboard: after a successful save (never after Invalid or Failed),
+  ui/ calls clearPrimaryClip without reading the clipboard.
+- Test clip: res/raw/test_clip.wav, a neutral phrase recorded by the
+  owner, 16 kHz mono 16-bit PCM, only RIFF, fmt and data chunks.
+- State: CaptureState.keyTest (NotTested, Running, Passed, Failed(reason),
+  Unreadable; Passed carries no text) and keyTestRun, changed only by
+  reduce. KeyTestStarted bumps the run; KeyTestFinished applies only to
+  a Running test of the current run; KeyTestReset (after Saved or
+  Deleted only, never on ApiKeyReported) returns to NotTested and bumps
+  the run; KeyTestCancelled applies only to a Running test of its run.
+  The overlay ignores keyTest; no response text enters state or logs.
+- Run: CaptureCommands.testTranscription() returns without launching
+  when a test is already Running; otherwise it runs on the app-wide
+  scope: read the key, upload a temporary copy once, delete it. Success and
+  NoSpeech (blank text) pass; other errors fail with their
+  FailureReason; an absent or unavailable key fails as KeyUnavailable.
+  An unreadable key (already deleted by data/): report the key absent,
+  commit Unreadable, then end a running session through
+  endForKeyRemoved directly, not through the delete command.
+- Cancel: a successful save or delete cancels a running test and resets
+  it, with or without a session; a session teardown with UserEnded,
+  KeyRemoved or KeyUnreadable cancels it (KeyTestCancelled). Other
+  teardown reasons leave it running.
+- Not in the debug rotation, no notification, the transcript untouched,
+  no minimum length (ADR-010 covers captured clips), never retried
+  (ADR-012).
+- Failure copy: one fixed text per reason, covering every cause and
+  naming the next step; Unauthorized, Forbidden, QuotaExceeded and
+  KeyUnavailable cards open Settings on tap; the key-unreadable alert
+  points to Settings; NoAudio covers a silent source and one that blocks
+  capture (closes D-006). InitFailed is removed.
+- Rejected: reading the clipboard to compare before clearing (clearing
+  without reading is simpler, and a compare can miss a key copied with a
+  label or quotes, leaving it on the clipboard while the user believes
+  it was cleared); splitting
+  reasons by error code; testing the key on every open; holding the
+  test result outside the state store; a test bound to the Activity
+  (recreation cancels it).
+### Consequences
+- Clearing also wipes unrelated clipboard content, also when the key
+  was typed. A Paste inside HearCopy's own key field is still a
+  clipboard read.
+- Each test is billed (about 1 s); a test cancelled after the clip was
+  sent may still be billed (ADR-012).
+- A test that finds the key unreadable ends a running session as
+  KeyRemoved (logged as KeyRemoved), which also cancels a captured
+  clip's upload in flight (ADR-015 treats KeyRemoved as non-deferring).
+- With no session, removing HearCopy from Recents gives HearCopy no
+  callback (no service, no onTaskRemoved): a test in flight runs until
+  the process is reclaimed (ADR-007 recorded a reclaim about 1 s later;
+  Cap 2 phase 2.5 check 1 saw none). If the process lives, the result
+  stays in memory and shows on the next open; either way the upload may
+  be billed.
+- The owner's voice is published in the repo.
+- Closes ADR-005's "InitFailed stays until the Cap 3 failure copy";
+  ADR-005 Status is unchanged.
+- ADR-004's "anything else is InitFailed" now means a failed capture
+  start, which ends the session (ADR-005); ADR-004 Status is unchanged.
+- A built-in clip that cannot be copied (a full disk) fails the test
+  with the ReadError text, which speaks of audio capture although
+  nothing was captured; accepted, as a new reason would break the
+  one-text-per-reason pairing (FailureTextTest).
+- The Timeout and Rejected texts are written for captured clips and
+  read oddly after a test; both are unlikely for the 1.4 s built-in
+  clip.
+- Device-A at the anchor: after Replace and Save the clipboard was
+  empty. With the session live, Test transcription showed "Testing…"
+  and passed, with no notification and the transcript unchanged; with
+  a fake key it failed with the Unauthorized text. The button still
+  recorded after that test: a 10.9 s TikTok clip failed as
+  Unauthorized and its card opened Settings. Saving the real key reset
+  the line to "Not tested", and a new test passed. A clip over the
+  built-in gallery app showed the NoAudio text on the card and in the
+  notification. No AndroidRuntime errors, no key pattern and no
+  response text in the saved logs.

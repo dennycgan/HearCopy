@@ -50,7 +50,7 @@ Paths are relative to the package root `com.dennycgan.hearcopy`.
 | Transcription | `transcription/` | `TranscriptionClient`: one upload per clip to `gpt-transcribe` |
 | Data | `data/` | `SettingsRepository` (encrypted API key), `TranscriptRepository` (latest transcript), `TouchPositionRepository` (button position) |
 | Notifications | `notify/` | `CaptureNotifications`: session, alert and transcription notifications |
-| UI | `ui/` | `MainActivity`, `MainScreen` and `SettingsScreen`: the main screen (status, latest transcript) and the settings page (API key) |
+| UI | `ui/` | `MainActivity`, `MainScreen` and `SettingsScreen`: the main screen (status, latest transcript) and the settings page (API key, test transcription) |
 | Wiring | `AppContainer.kt` | Builds the app-wide objects and wires them; created by `HearCopyApplication` |
 
 `DependencyDirectionTest` enforces the import direction. `state/` is pure
@@ -97,7 +97,8 @@ TikTok) while a capture session is active.
 
 - A clip shorter than 1 second is discarded without an upload; a
   recording stops by itself at 5 minutes.
-- If a clip fails, the notification and HearCopy's main screen say why.
+- If a clip fails, the notification and HearCopy's main screen say why
+  and what to do.
 - The latest transcript stays on the main screen until the next one
   replaces it, also across restarts; a failure does not clear it.
 - Drag hearcopyTouch where you want it; it stays there, also after a
@@ -111,7 +112,8 @@ Android only lets HearCopy capture audio that the playing app allows.
 Audio is left out when the app targets Android 9 or lower without opting
 in, when it sets a policy that blocks capture, or when it plays audio as
 something other than media, game or unknown. Left-out audio records as
-silence, so HearCopy reports that no audio was heard; it cannot tell a
+silence, so HearCopy reports that no sound was captured: nothing was
+playing, or the app does not allow audio capture. It cannot tell a
 blocked app from a silent one. TikTok works; the test phone's built-in
 gallery app does not. To check an app, play something and record a
 short clip of at least 1 second.
@@ -119,8 +121,8 @@ short clip of at least 1 second.
 ## Status
 
 - Version 0.1.0. V1 is in progress: capture, the floating button, the
-  transcription loop, the main screen and the settings page work. The
-  next step completes key setup.
+  transcription loop, the main screen, the settings page and key setup
+  work. The next step is the V1 release.
 - There is no release APK yet; build it from source (below).
 - Tuned for English: each request tells the model to expect English.
   OpenAI describes `gpt-transcribe` as transcribing speech in its
@@ -144,7 +146,9 @@ on the card opens it again:
 
 1. OpenAI API key: tap the card or the gear to open Settings, paste the
    key and tap Save (read Security and privacy below before you create
-   one), then go back to the main screen.
+   one). Optionally tap Test transcription: it sends a built-in clip of
+   about 1.4 seconds, billed like any other clip, and shows whether the
+   key works. Then go back to the main screen.
 2. Display over other apps: Android opens its settings; find HearCopy,
    allow it, and come back.
 3. Microphone: Android requires this permission for capturing the audio
@@ -179,9 +183,9 @@ phone.
 - HearCopy never writes the key to its logs or error messages.
 - Only enter your key into a build made from this repository, never into
   a modified build from elsewhere.
-- A pasted key stays on the clipboard: HearCopy does not clear it yet, so
-  clear it yourself. Your keyboard's own clipboard history is out of
-  HearCopy's reach.
+- After you save a key, HearCopy clears the clipboard without reading
+  it, so anything else on it is cleared too. Your keyboard's own
+  clipboard history is out of HearCopy's reach.
 - If you think the key has leaked, revoke it in the OpenAI dashboard
   straight away.
 
@@ -195,6 +199,8 @@ phone.
 - Each request carries your key and one clip (16 kHz mono WAV). OpenAI
   handles the audio under its API data policy:
   [Data controls in the OpenAI platform](https://developers.openai.com/api/docs/guides/your-data).
+- Test transcription, in Settings, sends a built-in clip of about 1.4
+  seconds with your key, billed like any other clip.
 - A clip is sent at most once, with no automatic retry. That does not
   cap the cost: every tap is a new upload. An upload cancelled after the
   clip was sent may still be billed.
