@@ -10,7 +10,7 @@ details live in DECISIONS.md.
 - [x] Cap 2 Transcription loop
 - [x] Public repo
 - [x] Cap 3 Main UI, settings and lifecycle completion
-- [ ] V1 release  <- YOU ARE HERE
+- [~] V1 release  <- YOU ARE HERE
   - Includes Device-B (Android 11) full flow, including: the overlay
     permission guidance does not promise HearCopy's own settings page;
     RECORD_AUDIO is re-checked at every recording start ('Only this
@@ -21,15 +21,30 @@ details live in DECISIONS.md.
     with the app info tap; the display-over-other-apps permission
     revoked during an upload, with the Finishing card (ADR-015,
     ADR-018).
-  - App icon (clears lint MissingApplicationIcon; icon vectors must use
-    @color references or need a CopyAndThemeTest decision).
   - Keep or remove the debug-only WAV retention (debug builds keep the
     last three valid clips).
 
 ## Phase Roadmap (V1 release)
 
-- V1 release is not scoped yet. Its phases are written here once the
-  owner approves the V1 release design.
+- [x] V1.1 Debug side by side and app icon: debug builds install as
+  com.dennycgan.hearcopy.debug; adaptive launcher icon, a waveform on
+  the accent; manifest android:icon (ADR-020) (481c920)
+- [ ] V1.2 Device-B full flow (debug build, real key): 48 kHz capture,
+  overlay geometry, overlay guidance, 'Only this time' re-check,
+  dismissed microphone dialog and the app info tap, overlay revoked
+  during an upload with the Finishing card; README tested-on line
+- [ ] V1.3 Release build (Device-A, release APK, real key): CLAUDE.md
+  rules edit for the signed build; release signing that fails closed
+  without the signing file; R8 without obfuscation; version 1.0.0;
+  CHANGELOG.md; third-party notices; R8 task in CI; signed build by the
+  owner in a separate clone; README release-build paragraph
+- [ ] V1.4 Release candidate on the public path (Device-B, real key):
+  signed build from a GitHub clone at the pushed head; immutable
+  releases on; draft release with the APK; install from the draft in
+  Chrome
+- [ ] V1.5 Publish and close: publish the draft unchanged; asset digest
+  and attestation checks; README download, install and licence
+  sections
 
 ## Known debt
 

@@ -979,3 +979,50 @@ native rates.
   built-in gallery app showed the NoAudio text on the card and in the
   notification. No AndroidRuntime errors, no key pattern and no
   response text in the saved logs.
+
+## ADR-020: Debug and release installs side by side
+> Debug builds install as com.dennycgan.hearcopy.debug, so a debug build and the signed release can stay on the same phone without an uninstall.
+- Status: Accepted (2026-11-14)
+- Anchor: 481c920
+### Context
+- The V1 release is signed with the owner's release key; debug
+  builds are signed with the local debug key. Android refuses to
+  install an APK over an app signed with a different certificate.
+- The only way across is an uninstall, which deletes the Keystore
+  key, the encrypted API key, the transcript and the button position
+  (ADR-013, ADR-014, ADR-017), and puts the key on the clipboard again
+  when it is re-entered.
+- Device-A and Device-B carry both development builds and the release.
+- Every package-name use in the code is read at runtime.
+- CLAUDE.md allows user-visible copy only in main/res/values/strings.xml.
+### Decision
+- The debug build type sets applicationIdSuffix ".debug". The
+  namespace, the code packages and the release applicationId
+  com.dennycgan.hearcopy are unchanged.
+- Debug and release share the label and the icon; there are no
+  debug-only resources.
+- Rejected: one id with an uninstall whenever debug and release swap
+  (data loss and a re-entered key); a debug label (copy outside main
+  strings.xml); a separate debug icon (extra resources for a
+  development-only need; the two installs are told apart with adb).
+### Consequences
+- A phone can show two apps named HearCopy with the same icon. They
+  are told apart with adb (`pm list packages`), not on the phone;
+  device checks open the intended one with `am start` and return to
+  it through Recents.
+- Each install has its own permissions, overlay grant, Keystore entry,
+  DataStore files and key. Only one holds the projection at a time
+  (ADR-007): consent in one ends the other's session as
+  ProjectionLost.
+- Both log with the tag HearCopyCapture; logs from two running
+  installs are told apart by process id.
+- Debug installs made before the anchor (com.dennycgan.hearcopy,
+  debug key) are not updated by new debug builds and block a release
+  install, so they must be removed on a phone before its first
+  release install (Device-B before V1.2, Device-A before V1.3).
+- Device-A at the anchor: com.dennycgan.hearcopy.debug and the earlier
+  com.dennycgan.hearcopy installed side by side (`pm list packages`).
+  The owner checked the new icon on the home screen and in the app
+  drawer, on a light and a dark wallpaper: it read clearly, no bar was
+  clipped by the launcher mask, and the earlier install still showed
+  the default icon.
