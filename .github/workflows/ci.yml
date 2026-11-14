@@ -53,5 +53,5 @@ jobs:
           cache-provider: basic
           validate-wrappers: true
 
-      - name: Build, unit and architecture tests, lint
-        run: ./gradlew assembleDebug test lint
+      - name: Build, unit and architecture tests, lint, release R8
+        run: ./gradlew assembleDebug test lint :app:minifyReleaseWithR8
