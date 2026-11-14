@@ -62,6 +62,9 @@ Run `./gradlew test` before presenting any diff that touches `app/` or `gradle/`
 
 - Never read, print, copy or reference: `*.jks`, `*.keystore`,
   `keystore.properties`, any signing secrets, `.env`.
+- Never read, print or copy the value of `HEARCOPY_SIGNING_PROPERTIES`
+  or the file it names, and never run a build or any other command
+  with it set. The build script may refer to the variable by name.
 - Never write a real API key anywhere: code, tests, fixtures, logs,
   docs, commit messages. Tests use obvious fakes (e.g. `sk-test-fake`).
 - Never put into committed files: real device model, serial number,
@@ -75,6 +78,8 @@ Run `./gradlew test` before presenting any diff that touches `app/` or `gradle/`
 ## Owner-only actions (stop and ask the owner to do these)
 
 - Creating the release keystore or changing signing config
+- Running the signed release build (in the owner's own terminal,
+  in a separate clone)
 - Creating or rotating OpenAI keys
 - Changing repo visibility, branch protection, or GitHub settings
 - Publishing a GitHub Release
