@@ -7,6 +7,8 @@
 [Download the latest APK](https://github.com/dennycgan/HearCopy/releases/latest).
 Android 10 or later; see [Download and install](#download-and-install).
 
+<img src="docs/images/readme-screenshots.jpg" width="100%" alt="Four HearCopy screens side by side, with four callouts and one white arrow added for this image. First: the Settings page with a saved OpenAI API key shown as dots, its last characters blurred, Replace and Delete buttons, and under Connection a Test transcription button with the line Test passed: the key works; a callout reads Set up once: add your own OpenAI API key. Second: recording over a blurred video in another app; hearcopyTouch, the floating button, shows a red stop square and the timer at 00:06, the arrow points at it, and a callout reads Tap to capture. Drag the button anywhere on the screen. Third: the notification, a HearCopy banner titled Transcribing that reads: Audio received. Tap to return to HearCopy for the result; a callout directly below it, with a small tail pointing at it, reads Tap the notification to open HearCopy and read the transcript, and further down the button shows a red progress ring while the clip is transcribed. Fourth: the main screen with the transcript, under the status Completed, The new transcript is below, in a card with a Copy all button; a callout reads Copy all, or select just the words you need.">
+
 HearCopy is an Android app that turns a short stretch of audio playing on
 your phone into text you can select and copy.
 
