@@ -214,6 +214,25 @@ advanced flow
 
 ## Setup
 
+### Before you start: an OpenAI API key
+
+HearCopy needs an OpenAI API secret key, a long string shown as
+`sk-...` in OpenAI's examples. It comes from the OpenAI API platform,
+which is separate from ChatGPT: a ChatGPT account or subscription is not
+an API key, and ChatGPT and the API are billed separately.
+
+1. Sign up or sign in at [platform.openai.com](https://platform.openai.com).
+2. Add credit under Billing. API use is paid from prepaid credit, and
+   every transcription is deducted from your balance.
+3. Open [API keys](https://platform.openai.com/api-keys), choose
+   **Create new secret key**, and copy the key straight away: it is
+   shown only once.
+4. Paste it into HearCopy's Settings (step 1 below). To cap what a
+   leaked key could cost, see
+   [Limiting what a leaked key can cost](#limiting-what-a-leaked-key-can-cost).
+
+### In HearCopy
+
 Open HearCopy. The status card on the main screen names the next step;
 HearCopy opens each system step by itself, and if you refuse one, a tap
 on the card opens it again:
