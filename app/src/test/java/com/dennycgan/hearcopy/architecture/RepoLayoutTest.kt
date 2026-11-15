@@ -2,7 +2,7 @@ package com.dennycgan.hearcopy.architecture
 
 import org.junit.Test
 
-/** Repo root and docs/ hold only allowlisted entries (ADR-001, ADR-016). */
+/** Repo root and docs/ hold only allowlisted entries (ADR-001, ADR-016, ADR-022). */
 class RepoLayoutTest {
 
     private val rootFiles = setOf(
@@ -41,12 +41,27 @@ class RepoLayoutTest {
         assertNoViolations("Repo root entries must be allowlisted:", violations)
     }
 
+    /** README images: files directly in docs/images/ with one of these extensions. */
+    private val docsImagesDir = "docs/images/"
+    private val docsImageExtensions = setOf("svg", "png", "jpg")
+
+    private fun isDocsImage(path: String): Boolean {
+        if (!path.startsWith(docsImagesDir)) return false
+        val name = path.removePrefix(docsImagesDir)
+        return '/' !in name &&
+            name.substringBeforeLast('.', "").isNotEmpty() &&
+            name.substringAfterLast('.', "") in docsImageExtensions
+    }
+
     @Test
-    fun `docs holds only the three docs files`() {
+    fun `docs holds only the three docs files and README images`() {
         val violations = Repo.files
-            .filter { it.startsWith("docs/") && it !in docsFiles }
-            .map { "$it (not an allowlisted docs file)" }
-        assertNoViolations("docs/ must hold only ${docsFiles.sorted()}:", violations)
+            .filter { it.startsWith("docs/") && it !in docsFiles && !isDocsImage(it) }
+            .map { "$it (not an allowlisted docs file or docs/images/ image)" }
+        assertNoViolations(
+            "docs/ must hold only ${docsFiles.sorted()} and images in $docsImagesDir ${docsImageExtensions.sorted()}:",
+            violations,
+        )
     }
 
     @Test
