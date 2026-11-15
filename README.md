@@ -1,3 +1,5 @@
+<img src="docs/images/hearcopy-icon.svg" width="96" alt="HearCopy app icon">
+
 # HearCopy
 
 *Catch what you just heard.*
@@ -140,6 +142,26 @@ short clip of at least 1 second.
   phones in portrait; newer versions are not tested.
 - You need your own OpenAI API key. Every transcription is billed to your
   OpenAI account.
+
+## Roadmap
+
+1.0.0 is the first release, not the last. These are the next steps, in
+the order they are planned; there are no dates.
+
+1. **Language preference.** Each request currently tells the model to
+   expect English. A setting will let you pick the language you usually
+   listen to, or leave it to automatic detection, to improve accuracy
+   for other languages and for multilingual audio.
+2. **Microphone mode.** A second, opt-in mode that transcribes sound
+   around you through the phone's microphone, such as a talk, a lecture
+   or a video playing on another device. Today's mode, which captures
+   only the audio other apps play, stays the default; 1.0.0 never
+   records the microphone. HearCopy will always show which mode is
+   active.
+3. **Quick actions on hearcopyTouch.** Once both are in place, a long
+   press on the button will open a small menu to switch between the two
+   modes, change the language, or end the session and close HearCopy in
+   one step (today that means removing HearCopy from Recents).
 
 ## Download and install
 

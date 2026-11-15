@@ -1120,3 +1120,39 @@ native rates.
   Android's overlay list; a TikTok clip recorded at 48 kHz was
   transcribed. No crash, no R8 failure and no key pattern in the saved
   logs of either phone.
+
+## ADR-022: README images in docs/images
+> docs/ may also hold .svg, .png and .jpg files directly in docs/images/, so the README can show the app icon now and a screenshot later without another guard change.
+- Status: Accepted (2026-11-15)
+- Anchor: cb0053c
+### Context
+- RepoLayoutTest allows only STATE.md, DECISIONS.md and
+  PHASE_HISTORY.md in docs/ (ADR-001).
+- The README is to show the app icon above its title, and later one
+  composite screenshot below the tagline. GitHub renders README images
+  from files in the repository.
+- LanguageTest reads every file as UTF-8 and scans it for CJK; a file
+  containing a NUL byte is treated as binary and skipped.
+### Decision
+- RepoLayoutTest also accepts files directly in docs/images/ with the
+  extension svg, png or jpg (lower case, a non-empty name). No
+  subdirectories and no other extensions; the three docs files and the
+  docs/private/ test are unchanged.
+- docs/images/hearcopy-icon.svg is drawn from the geometry of
+  ic_launcher_foreground.xml on the accent colour, inside the 72 dp
+  circle a launcher mask leaves visible. Plain SVG: no script, no
+  external reference.
+- Rejected: one allowlisted path per image (the screenshot would need a
+  second guard change and ADR); images at the repo root (widens the
+  root allowlist); images hosted outside the repository (the README
+  would depend on files outside its history); checking SVG content in
+  the guard (no evidence of a need; review covers it).
+### Consequences
+- Further images in docs/images/ need no guard change; review decides
+  what they show.
+- The SVG is text and is scanned by LanguageTest. PNG and JPG files are
+  skipped as binary: a PNG always has NUL bytes in its IHDR length, a
+  JPEG in its mandatory frame header length.
+- The icon is a hand-made copy: if the launcher geometry or colours
+  change, the SVG must be redrawn; nothing checks that they match.
+- Images in docs/images/ are not part of the APK.
